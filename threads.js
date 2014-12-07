@@ -3148,6 +3148,64 @@ Process.prototype.doVideoStop = function() {
     this.videoStream = null;
 }
 
+// Rigid Body solver primitives -- experimental code
+
+Process.prototype.doRigidBodySimulation = function() {
+    if ((Date.now() - this.context.startTime) < 20) {
+        this.pushContext("doYield");
+        this.pushContext();
+        return null;
+    }
+
+    var stage;
+    if (this.homeContext.receiver) {
+        stage = this.homeContext.receiver.parentThatIsA(StageMorph);
+        if (stage) {
+
+            var rbs = this.context.rigidBodySolver ? 
+                      this.context.rigidBodySolver : 
+                      new RigidBodySolver(stage);
+
+            this.context.rigidBodySolver = rbs;
+
+            if (rbs.isRunning) {
+                rbs.start();
+            }
+
+            this.pushContext("doYield");
+            var arr = [];
+            stage.children.forEach(function(morph) {
+                if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
+                    arr.push(morph.rigidBody);
+                }
+            });
+            rbs.simulate(arr);
+            this.pushContext();
+        }
+    }
+}
+
+Process.prototype.doStopRigidBodySimulation = function() {
+    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
+    if( stage ) {
+        if (this.context.rigidBodySolver) {
+            this.context.rigidBodySolver.stop();
+        }
+        stage.children.forEach(function(morph) {
+            if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
+                morph.rigidBody.reset();
+            }
+        });
+        stage.threads.processes.forEach(function(thread) {
+            if (thread.context && thread.context.rigidBody) {
+                thread.context.rigidBodySolver.stop();
+                thread.popContext();
+            }
+        });
+    }
+    return null;
+}
+
 
 // Context /////////////////////////////////////////////////////////////
 

@@ -1231,6 +1231,24 @@ SpriteMorph.prototype.initBlocks = function () {
             category: 'pen',
             spec: 'stop video source'
         },
+
+        // Rigid body -- experimental code
+        doRigidBodySimulation: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'run rigid body simulation'
+        },
+        doStopRigidBodySimulation: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'stop rigid body simulation'
+        },
+        reportRigidBodySimulation: {
+            type: 'predicate',
+            category: 'sensing',
+            spec: 'rigid body simulation running?'
+        },
+
     };
 };
 
@@ -1330,7 +1348,12 @@ SpriteMorph.prototype.blockAlternatives = {
     doSetVar: ['doChangeVar'],
     doChangeVar: ['doSetVar'],
     doShowVar: ['doHideVar'],
-    doHideVar: ['doShowVar']
+    doHideVar: ['doShowVar'],
+
+    // Rigid Body -- experimental code
+    doRigidBodySimulation: ['doStopRigidBodySimulation'],
+    doStopRigidBodySimulation: ['doRigidBodySimulation']
+
 };
 
 // SpriteMorph instance creation
@@ -5128,6 +5151,11 @@ StageMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+
+    // Rigid Body -- experimental code
+
+        blocks.push(block('doRigidBodySimulation'));
+        blocks.push(block('doStopRigidBodySimulation'));
 
     // for debugging: ///////////////
 
