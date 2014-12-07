@@ -1207,7 +1207,30 @@ SpriteMorph.prototype.initBlocks = function () {
             type: 'reporter',
             category: 'other',
             spec: 'code of %cmdRing'
-        }
+        },
+
+        // Video stream -- experimental code
+        getVideoSource: {
+            type: 'reporter',
+            category: 'pen',
+            spec: 'video source'
+        },
+        setVideoSource: {
+            type: 'command',
+            category: 'pen',
+            spec: 'set video source to %s',
+            defaults: [ 'http://localhost/snap/tests/small.mp4' ]
+        },
+        doVideoPlay: {
+            type: 'command',
+            category: 'pen',
+            spec: 'play video source'
+        },
+        doVideoStop: {
+            type: 'command',
+            category: 'pen',
+            spec: 'stop video source'
+        },
     };
 };
 
@@ -1330,6 +1353,9 @@ SpriteMorph.prototype.init = function (globals) {
     this.version = Date.now(); // for observer optimization
     this.isClone = false; // indicate a "temporary" Scratch-style clone
     this.cloneOriginName = '';
+
+    // video stream -- experimental code
+    this.video = null;
 
     // sprite nesting properties
     this.parts = []; // not serialized, only anchor (name)
@@ -1844,6 +1870,13 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('setSize'));
         blocks.push('-');
         blocks.push(block('doStamp'));
+
+        blocks.push('-');
+        blocks.push(watcherToggle('getVideoSource'));
+        blocks.push(block('getVideoSource'));
+        blocks.push(block('setVideoSource'));
+        blocks.push(block('doVideoPlay'));
+        blocks.push(block('doVideoStop'));
 
     } else if (cat === 'control') {
 
@@ -3011,7 +3044,7 @@ SpriteMorph.prototype.applyGraphicsEffects = function (canvas) {
         var i;
         if (value !== 0) {
             for (i = 0; i < p.length; i += 4) {
-                p[i] += value; //255 = 100% of this color 
+                p[i] += value; //255 = 100% of this color
                 p[i + 1] += value;
                 p[i + 2] += value;
             }
@@ -4226,6 +4259,16 @@ SpriteMorph.prototype.doScreenshot = function (imgSource, data) {
         costume = new Costume(canvas, data);
     }
     this.addCostume(costume);
+};
+
+// SpriteMorph video stream
+
+SpriteMorph.prototype.getVideoSource = function() {
+    return this.video;
+};
+
+SpriteMorph.prototype.setVideoSource = function( url ) {
+    this.video = url;
 };
 
 // SpriteHighlightMorph /////////////////////////////////////////////////

@@ -431,6 +431,7 @@ Process.prototype.stop = function () {
     this.errorFlag = false;
     if (this.context) {
         this.context.stopMusic();
+        this.context.stopVideo();
     }
 };
 
@@ -3048,6 +3049,106 @@ Process.prototype.reportFrameCount = function () {
     return this.frameCount;
 };
 
+// Video stream primitives -- experimental code
+
+Process.prototype.doVideoPlay = function() {
+    var video  = this.context.videoStream || null;
+    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph );
+    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph );
+
+    if( video === null ) {
+        if( ! sprite.video ) {
+            throw new Error( 'No video source selected.' );
+        }
+
+        sprite.doSwitchToCostume( 1 );
+
+        if( ! sprite.costume ) {
+            var tmpCenter  = sprite.center();
+            var tmpCostume = new Costume(
+                newCanvas(stage.dimensions),
+                sprite.newCostumeName('video')
+            );
+
+            sprite.addCostume( tmpCostume );
+            sprite.doSwitchToCostume( 1 );
+            sprite.setCenter( tmpCenter, true );
+            sprite.changed();
+        }
+
+        video = document.createElement( 'video' );
+
+        video.addEventListener( 'loadedmetadata', function() {
+            //FIXME: Actor's rotation center is a bit offset, needs fixing
+            console.log( 'Loaded metadata for "' + sprite.name + '".' );
+        });
+
+        var process = this;
+
+        video.addEventListener( 'ended', function() {
+            process.doVideoStop();
+        });
+
+        video.src = sprite.video;
+        video.play();
+
+        this.context.videoStream = video;
+
+    } else {
+        var canvas  = sprite.costume.contents;
+        var context = canvas.getContext( '2d' );
+        var stage   = this.homeContext.receiver.parentThatIsA( StageMorph );
+
+        if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
+            // Video width crop calculation
+            if( video.videoWidth > stage.image.width ) {
+                var sx = (video.videoWidth - stage.image.width) /2;
+                var swidth = stage.image.width;
+            } else {
+                var sx = 0;
+                var swidth = video.videoWidth;
+            }
+
+            // Video height crop calculation
+            if( video.videoHeight > stage.image.height ) {
+                var sy = (video.videoHeight - stage.image.height) /2;
+                var sheight = stage.image.height;
+            } else {
+                var sy = 0;
+                var sheight = video.videoHeight;
+            }
+
+            context.drawImage( video, 0, 0, video.videoWidth,
+                video.videoHeight, 0, 0, canvas.width, canvas.height );
+            sprite.drawNew();
+        }
+    }
+
+    this.pushContext( 'doYield' );
+    this.pushContext();
+}
+
+Process.prototype.doVideoStop = function() {
+    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
+    if( stage ) {
+        stage.threads.processes.forEach( function( thread ) {
+            if( thread.context.videoStream ) {
+                thread.popContext();
+            }
+        });
+    }
+
+    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph );
+    if( sprite.costume ) {
+        sprite.costume.contents = newCanvas( stage.dimensions );
+        sprite.changed();
+        sprite.doSwitchToCostume( 0 );
+    }
+
+    this.videoStream = null;
+}
+
+
 // Context /////////////////////////////////////////////////////////////
 
 /*
@@ -3081,6 +3182,7 @@ Process.prototype.reportFrameCount = function () {
     emptySlots      caches the number of empty slots for reification
     tag             string or number to optionally identify the Context,
                     as a "return" target (for the "stop block" primitive)
+    videoStream     FIXME
 */
 
 function Context(
@@ -3109,6 +3211,7 @@ function Context(
     this.isCustomBlock = false; // marks the end of a custom block's stack
     this.emptySlots = 0; // used for block reification
     this.tag = null;  // lexical catch-tag for custom blocks
+    this.videoStream = null;
 }
 
 Context.prototype.toString = function () {
@@ -3239,6 +3342,15 @@ Context.prototype.stopMusic = function () {
     if (this.activeNote) {
         this.activeNote.stop();
         this.activeNote = null;
+    }
+};
+
+// Context video
+
+Context.prototype.stopVideo = function () {
+    if( this.videoStream ) {
+        this.videoStream.currentTime = this.videoStream.duration;
+        this.videoStream = null;
     }
 };
 
