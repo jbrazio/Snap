@@ -2377,3 +2377,16 @@ ______
 ------
 * Morphic: Cache actual bounding box of the Pen arrow shape
 * Threads, Objects: Improve edge-collision detection of default sprite “arrow” shape
+
+141204
+------
+* Threads, Objects: Experimental “ForEach” primitive (hidden in dev mode)
+* GUI: Another attempt at pointing the project dialog to the cloud if signed in
+
+141205
+------
+* Morphic: Avoid auto-scaling artefacts in Safari on retina displays (resulting in “traces” when dragging items)
+
+141206
+------
+* Store: Fixed #668
