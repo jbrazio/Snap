@@ -1,5 +1,5 @@
 /*
- 
+
     threads.js
 
     a tail call optimized blocks-based programming language interpreter
@@ -2882,7 +2882,12 @@ Process.prototype.doStreamCamera = function () {
                     var dest = stage.lastCameraCanvas.getContext('2d');
                     dest.drawImage(stage.trailsCanvas, 0, 0);
                 }
-                context.drawImage(video, 0, 0, video.width, video.height);
+
+                context.save();
+                context.scale( -1, 1 ); // mirror the webcam image
+                context.drawImage(video, 0, 0, video.width * -1, video.height);
+                context.restore();
+
                 stage.changed();
                 stage.streamingCamera = true;
             } catch (e) {
