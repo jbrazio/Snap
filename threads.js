@@ -3133,6 +3133,7 @@ Process.prototype.doVideoStop = function() {
     if( stage ) {
         stage.threads.processes.forEach( function( thread ) {
             if( thread.context.videoStream ) {
+                thread.context.videoStream.pause();
                 thread.popContext();
             }
         });
@@ -3144,7 +3145,6 @@ Process.prototype.doVideoStop = function() {
         sprite.changed();
         sprite.doSwitchToCostume( 0 );
     }
-
     this.videoStream = null;
 }
 
