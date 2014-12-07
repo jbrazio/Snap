@@ -3074,12 +3074,9 @@ Process.prototype.reportFrameCount = function () {
     startValue      initial value for interpolated operations
     activeAudio     audio buffer for interpolated operations, don't persist
     activeNote      audio oscillator for interpolated ops, don't persist
-<<<<<<< HEAD
     activeStream    video element for camera streaming, don't persist
     isLambda        marker for return ops
     isImplicitLambda    marker for return ops
-=======
->>>>>>> master
     isCustomBlock   marker for return ops
     emptySlots      caches the number of empty slots for reification
     tag             string or number to optionally identify the Context,
@@ -3106,12 +3103,9 @@ function Context(
     this.startTime = null;
     this.activeAudio = null;
     this.activeNote = null;
-<<<<<<< HEAD
     this.activeStream = null;
     this.isLambda = false; // marks the end of a lambda
     this.isImplicitLambda = false; // marks the end of a C-shaped slot
-=======
->>>>>>> master
     this.isCustomBlock = false; // marks the end of a custom block's stack
     this.emptySlots = 0; // used for block reification
     this.tag = null;  // lexical catch-tag for custom blocks
