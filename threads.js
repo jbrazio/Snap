@@ -2864,6 +2864,10 @@ Process.prototype.doStreamCamera = function () {
         var canvas = stage.trailsCanvas;
         var context = canvas.getContext('2d');
 
+        // Mirror webcam image
+        context.translate( context.width, 0 );
+        context.scale( -1, 1 );
+
         if (video.readyState == 4) {
             try {
     // https://stackoverflow.com/questions/23840880/check-whether-canvas-is-black
@@ -2882,12 +2886,7 @@ Process.prototype.doStreamCamera = function () {
                     var dest = stage.lastCameraCanvas.getContext('2d');
                     dest.drawImage(stage.trailsCanvas, 0, 0);
                 }
-
-                context.save();
-                context.scale( -1, 1 ); // mirror the webcam image
                 context.drawImage(video, 0, 0, video.width * -1, video.height);
-                context.restore();
-
                 stage.changed();
                 stage.streamingCamera = true;
             } catch (e) {
@@ -3058,47 +3057,34 @@ Process.prototype.reportFrameCount = function () {
 
 Process.prototype.doVideoPlay = function() {
     var video  = this.context.videoStream || null;
-    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph );
-    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph );
+    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph )  || null;
+    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph ) || null;
 
-    if( video === null ) {
-        if( ! sprite.video ) {
+    if( ! video ) {
+        if( ! sprite.video )
             throw new Error( 'No video source selected.' );
-        }
 
-        sprite.doSwitchToCostume( 1 );
-
-        if( ! sprite.costume ) {
-            var tmpCenter  = sprite.center();
-            var tmpCostume = new Costume(
-                newCanvas(stage.dimensions),
-                sprite.newCostumeName('video')
-            );
-
-            sprite.addCostume( tmpCostume );
-            sprite.doSwitchToCostume( 1 );
-            sprite.setCenter( tmpCenter, true );
-            sprite.changed();
-        }
+        sprite.costume = new Costume(
+            newCanvas( stage.dimensions ),
+            sprite.newCostumeName( 'video' ),
+            new Point(
+                parseInt( stage.dimensions.x /2 ),
+                parseInt( stage.dimensions.y /2 )
+            )
+        );
+        sprite.changed();
 
         video = document.createElement( 'video' );
-
-        video.addEventListener( 'loadedmetadata', function() {
-            //FIXME: Actor's rotation center is a bit offset, needs fixing
-            console.log( 'Loaded metadata for "' + sprite.name + '".' );
-        });
+        video.src = sprite.video;
+        video.autoplay = true;
+        video.loop = true;
 
         var process = this;
-
         video.addEventListener( 'ended', function() {
-            process.doVideoStop();
+            if( ! video.loop ) process.doVideoStop();
         });
 
-        video.src = sprite.video;
-        video.play();
-
         this.context.videoStream = video;
-
     } else {
         var canvas  = sprite.costume.contents;
         var context = canvas.getContext( '2d' );
@@ -3123,8 +3109,11 @@ Process.prototype.doVideoPlay = function() {
                 var sheight = video.videoHeight;
             }
 
-            context.drawImage( video, 0, 0, video.videoWidth,
-                video.videoHeight, 0, 0, canvas.width, canvas.height );
+            context.drawImage( video,
+                0, 0, video.videoWidth, video.videoHeight,
+                0, 0, canvas.width, canvas.height
+            );
+
             sprite.drawNew();
         }
     }
@@ -3134,23 +3123,22 @@ Process.prototype.doVideoPlay = function() {
 }
 
 Process.prototype.doVideoStop = function() {
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
+    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph )  || null;
+    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph ) || null;
+
+    if( sprite.costume ) {
+        sprite.doSwitchToCostume( 0 );
+    }
+
     if( stage ) {
         stage.threads.processes.forEach( function( thread ) {
             if( thread.context.videoStream ) {
                 thread.context.videoStream.pause();
+                thread.context.videoStream = null;
                 thread.popContext();
             }
         });
     }
-
-    var sprite = this.homeContext.receiver.parentThatIsA( SpriteMorph );
-    if( sprite.costume ) {
-        sprite.costume.contents = newCanvas( stage.dimensions );
-        sprite.changed();
-        sprite.doSwitchToCostume( 0 );
-    }
-    this.videoStream = null;
 }
 
 
@@ -3355,7 +3343,7 @@ Context.prototype.stopMusic = function () {
 Context.prototype.stopVideo = function () {
     if( this.videoStream ) {
         this.videoStream.currentTime = this.videoStream.duration;
-        this.videoStream = null;
+        this.videoStream.loop = false;
     }
 };
 

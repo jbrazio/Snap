@@ -1219,7 +1219,7 @@ SpriteMorph.prototype.initBlocks = function () {
             type: 'command',
             category: 'pen',
             spec: 'set video source to %s',
-            defaults: [ 'http://localhost/snap/tests/small.mp4' ]
+            defaults: [ 'http://snap.stinkfist.org/examples/bunny.mp4' ]
         },
         doVideoPlay: {
             type: 'command',
