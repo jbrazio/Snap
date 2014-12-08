@@ -43,7 +43,8 @@ RigidBody.prototype.init = function (morph, mass) {
     this.initialCenter = morph.center();
     this.mass = mass
     this.morph = morph;
-    this.velocity = new Point(10,30);
+    this.velocity = new Point(10,20);
+    this.restitution = 0.9;
 }
 
 RigidBody.prototype.position = function() {
@@ -67,7 +68,8 @@ RigidBody.prototype.reset = function() {
 
 // RigidBodySolver  ///////////////////////////////////////////////////
 
-function RigidBodySolver(timescale) {
+function RigidBodySolver(morph) {
+    this.morph = morph;
     this.init();
 }
 
@@ -109,6 +111,22 @@ RigidBodySolver.prototype.Verlet = function(bodies) {
 }
 
 RigidBodySolver.prototype.SatisfyConstraints = function(bodies) {
+    var stage = this.morph;
+    var solver = this;
+    bodies.forEach(function(body) {
+        var fb = body.morph.nestingBounds();
+        if (stage.bounds.containsRectangle(fb)) { return null; }
+
+        if (fb.right() > stage.right() ||
+            fb.left() < stage.left()) {
+            body.velocity = body.velocity.flipX().multiplyBy(new Point(body.restittution, 1));
+        }
+        if (fb.bottom() > stage.bottom() ||
+            fb.top() < stage.top()) {
+            body.velocity = body.velocity.flipY().multiplyBy(new Point(1, body.restitution));
+        }
+
+    });
 }
 
 RigidBodySolver.prototype.AccumulateForces = function(bodies) {

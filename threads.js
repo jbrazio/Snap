@@ -3156,7 +3156,7 @@ Process.prototype.doRigidBodySimulation = function() {
         if (stage) {
 
             if (!stage.rigidBodySolver) {
-                stage.rigidBodySolver = new RigidBodySolver();
+                stage.rigidBodySolver = new RigidBodySolver(stage);
             }
             this.context.rigidBody = true;
 
