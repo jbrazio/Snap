@@ -1231,6 +1231,35 @@ SpriteMorph.prototype.initBlocks = function () {
             category: 'pen',
             spec: 'stop video source'
         },
+
+        // Rigid body -- experimental code
+        enableRigidBody: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'enable rigid body with mass %n'
+
+        },
+        disableRigidBody: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'disable rigid body behaviour'
+        },
+        doRigidBodySimulation: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'run rigid body simulation'
+        },
+        doStopRigidBodySimulation: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'stop rigid body simulation'
+        },
+        reportRigidBodySimulation: {
+            type: 'predicate',
+            category: 'sensing',
+            spec: 'rigid body simulation running?'
+        },
+
     };
 };
 
@@ -1330,7 +1359,14 @@ SpriteMorph.prototype.blockAlternatives = {
     doSetVar: ['doChangeVar'],
     doChangeVar: ['doSetVar'],
     doShowVar: ['doHideVar'],
-    doHideVar: ['doShowVar']
+    doHideVar: ['doShowVar'],
+
+    // Rigid Body -- experimental code
+    enableRigidBody: ['disableRigidBody'],
+    disableRigidBody: ['enableRigidBody'],
+    doRigidBodySimulation: ['doStopRigidBodySimulation'],
+    doStopRigidBodySimulation: ['doRigidBodySimulation']
+
 };
 
 // SpriteMorph instance creation
@@ -1969,6 +2005,12 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+
+    // Rigid Body -- experimental code
+
+        blocks.push(block('reportRigidBodySimulation'));
+        blocks.push(block('enableRigidBody'));
+        blocks.push(block('disableRigidBody'));
 
     // for debugging: ///////////////
 
@@ -4271,6 +4313,28 @@ SpriteMorph.prototype.setVideoSource = function( url ) {
     this.video = url;
 };
 
+// Rigid Body -- experimental code
+
+SpriteMorph.prototype.enableRigidBody = function(mass) {
+    if (!this.rigidBody) {
+        this.rigidBody = new RigidBody(this, mass);
+    }
+};
+
+SpriteMorph.prototype.disableRigidBody = function() {
+    if (this.rigidBody instanceof RigidBody) {
+        this.rigidBody.reset();
+        delete this['rigidBody'];
+    }
+};
+
+SpriteMorph.prototype.reportRigidBodySimulation = function() {
+    var stage;
+    stage = this instanceof StageMorph ? this : this.parentThatIsA(StageMorph);
+    return (stage && stage.rigidBodySolver instanceof RigidBodySolver &&
+            stage.rigidBodySolver.isRunning);
+};
+
 // SpriteHighlightMorph /////////////////////////////////////////////////
 
 // SpriteHighlightMorph inherits from Morph:
@@ -5129,6 +5193,12 @@ StageMorph.prototype.blockTemplates = function (category) {
         blocks.push('-');
         blocks.push(block('reportDate'));
 
+    // Rigid Body -- experimental code
+
+        blocks.push(block('reportRigidBodySimulation'));
+        blocks.push(block('doRigidBodySimulation'));
+        blocks.push(block('doStopRigidBodySimulation'));
+
     // for debugging: ///////////////
 
         if (this.world().isDevMode) {
@@ -5632,6 +5702,11 @@ StageMorph.prototype.doubleDefinitionsFor
 
 StageMorph.prototype.replaceDoubleDefinitionsFor
     = SpriteMorph.prototype.replaceDoubleDefinitionsFor;
+
+// Rigid Body -- experimental code
+
+StageMorph.prototype.reportRigidBodySimulation
+    = SpriteMorph.prototype.reportRigidBodySimulation;
 
 // SpriteBubbleMorph ////////////////////////////////////////////////////////
 
