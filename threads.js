@@ -3162,14 +3162,13 @@ Process.prototype.doRigidBodySimulation = function() {
         stage = this.homeContext.receiver.parentThatIsA(StageMorph);
         if (stage) {
 
-            var rbs = this.context.rigidBodySolver ? 
-                      this.context.rigidBodySolver : 
-                      new RigidBodySolver(stage);
+            if (!stage.rigidBodySolver) {
+                stage.rigidBodySolver = new RigidBodySolver();
+            }
+            this.context.rigidBody = true;
 
-            this.context.rigidBodySolver = rbs;
-
-            if (rbs.isRunning) {
-                rbs.start();
+            if (!stage.rigidBodySolver.isRunning) {
+                stage.rigidBodySolver.start();
             }
 
             this.pushContext("doYield");
@@ -3179,7 +3178,7 @@ Process.prototype.doRigidBodySimulation = function() {
                     arr.push(morph.rigidBody);
                 }
             });
-            rbs.simulate(arr);
+            stage.rigidBodySolver.Timestep(arr);
             this.pushContext();
         }
     }
@@ -3188,8 +3187,8 @@ Process.prototype.doRigidBodySimulation = function() {
 Process.prototype.doStopRigidBodySimulation = function() {
     var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
     if( stage ) {
-        if (this.context.rigidBodySolver) {
-            this.context.rigidBodySolver.stop();
+        if (stage.rigidBodySolver instanceof RigidBodySolver) {
+            stage.rigidBodySolver.stop();
         }
         stage.children.forEach(function(morph) {
             if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
@@ -3198,7 +3197,6 @@ Process.prototype.doStopRigidBodySimulation = function() {
         });
         stage.threads.processes.forEach(function(thread) {
             if (thread.context && thread.context.rigidBody) {
-                thread.context.rigidBodySolver.stop();
                 thread.popContext();
             }
         });

@@ -39,25 +39,29 @@ function RigidBody(morph, mass, restitution) {
     this.init(morph, mass, restitution);
 }
 
-RigidBody.prototype.init = function (morph, mass, restitution) {
+RigidBody.prototype.init = function (morph, mass) {
     this.initialCenter = morph.center();
     this.mass = mass
     this.morph = morph;
-    this.velocity = new Point(2,0);
-    this.restitution = restitution;
+    this.velocity = new Point(10,30);
 }
 
 RigidBody.prototype.position = function() {
     return this.morph.center();
 }
 
-RigidBody.prototype.setPosition = function(point) {
-    this.morph.setCenter(point);
+RigidBody.prototype.setPosition = function(x, y) {
+    //this.previousPosition = this.position();
+    this.morph.setCenter(new Point(x,y));
+}
+
+RigidBody.prototype.setVelocity = function(x, y) {
+    this.velocity.x = x;
+    this.velocity.y = y;
 }
 
 RigidBody.prototype.reset = function() {
     this.morph.setCenter(this.initialCenter);
-    this.velocity = new Point(0,0);
 }
 
 
@@ -67,12 +71,11 @@ function RigidBodySolver(timescale) {
     this.init();
 }
 
-RigidBodySolver.prototype.init = function(point, timescale) {
+RigidBodySolver.prototype.init = function(gravity, timescale) {
     this.airDensity = 1.2041; //http://en.wikipedia.org/wiki/Density_of_air
-    this.gravity = point && point instanceof Point ? point : new Point(0, -9.81);
+    this.gravity = gravity && gravity instanceof Point ? gravity : new Point(0, -9.81);
     this.isRunning = true;
-    this.time = Date.now();
-    this.timescale = timescale ? timescale : 0.0001;
+    this.dt = 0.03;
 }
 
 RigidBodySolver.prototype.start = function() {
@@ -83,64 +86,38 @@ RigidBodySolver.prototype.stop = function() {
     this.isRunning = false;
 }
 
-RigidBodySolver.prototype.dragForce = function(velocity, Cd, density, area) {
-    //  D = Cd * 0.5 * r * V^2 * A
-    var d = v.multiplyBy(v).scaleBy(Cd * 0.5 * density * area).neg();
-    return d;
-}
-
-RigidBodySolver.prototype.simulate = function(bodies) {
-    // update elapsed time
-    var dt = (Date.now() - this.time) * this.timescale;
-    this.time += dt;
+RigidBodySolver.prototype.Verlet = function(bodies) {
     var solver = this;
     bodies.forEach(function(body) {
+        var p = body.position();
+        var v = body.velocity;
+        var a = solver.gravity;
+        var dt = solver.dt;
 
-        /*
-        Drag Force calculation based on:
+        // velocity verlet
+        var posx = p.x + v.x*dt + 0.5*a.x*dt*dt;
+        var posy = p.y - v.y*dt + 0.5*a.y*dt*dt;
 
-        http://www.grc.nasa.gov/WWW/k-12/airplane/drageq.html
-        http://www.grc.nasa.gov/WWW/k-12/airplane/falling.html
-        http://youtu.be/-ISmOwjCvoE
+        var vx = v.x + a.x*dt;
+        var vy = v.y + a.y*dt;
 
-        GLOSSARY:
-          m = object mass
-          g = gravity
-          w = object weight (m * g)
-          d = drag
-          Cd = drag coefficient (1.05 for a box - http://youtu.be/-ISmOwjCvoE)
-          r = air density (1.2041 - http://en.wikipedia.org/wiki/Density_of_air)
-          v = velocity
-          A = area
-          F = net external Force
+        body.setPosition(posx, posy);
+        body.setVelocity(vx, vy);
 
-          1)  w = m * g
-          2)  D = Cd * 0.5 * r * V^2 * A
-          3)  F = W - D
-          4)  F = m * a
-          5)  a = F / m
-          6)  a = (W - D) / m;
-
-        */
-
-
-        // compute drag force
-        var m  = body.mass;
-        var v_ = body.velocity;
-        var g_ = solver.gravity;
-        var w_ = g_.scaleBy(m);
-        var d_ = solver.dragForce(g_, 1.05, this.airDensity, 0.1);
-        var a_ = w_.subtract(d_).divideBy(m);
-        var v_ = v_.add(a_.scaleBy(dt));
-        var p_ = body.position();
-
-        console.log("v:" + v_ + " d:" + d_);
-
-        body.setPosition(p_.add(v_.scaleBy(dt*dt).flipY()));
-        body.velocity = v_;
-
-//        console.log("p:" + p + " g:" + g_ + " d:" + d_ + " a:" + a_ + " v:" + v_);
+        //console.log("p:" + p + " v:" + v);
     });
+}
+
+RigidBodySolver.prototype.SatisfyConstraints = function(bodies) {
+}
+
+RigidBodySolver.prototype.AccumulateForces = function(bodies) {
+}
+
+RigidBodySolver.prototype.Timestep = function(bodies) {
+    this.Verlet(bodies);
+    this.AccumulateForces(bodies);
+    this.SatisfyConstraints(bodies);
 }
 
 
