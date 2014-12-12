@@ -3156,11 +3156,6 @@ Process.prototype.doVideoStop = function() {
 // Rigid Body solver primitives -- experimental code
 
 Process.prototype.doRigidBodySimulation = function() {
-    if ((Date.now() - this.context.startTime) < 20) {
-        this.pushContext("doYield");
-        this.pushContext();
-        return null;
-    }
 
     var stage;
     if (this.homeContext.receiver) {
@@ -3177,13 +3172,13 @@ Process.prototype.doRigidBodySimulation = function() {
             }
 
             this.pushContext("doYield");
-            var arr = [];
+            var bodies = [];
             stage.children.forEach(function(morph) {
                 if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
-                    arr.push(morph.rigidBody);
+                    bodies.push(morph.rigidBody);
                 }
             });
-            stage.rigidBodySolver.Timestep(arr);
+            stage.rigidBodySolver.step(bodies);
             this.pushContext();
         }
     }
