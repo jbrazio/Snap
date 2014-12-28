@@ -13,12 +13,16 @@ var CollisionSolver;
 
 // I extend the Point class already in Snap!
 
-Point.prototype.length = function() {
+function Vector2d(x,y) {
+    return new Point(x, y);
+}
+
+Point.prototype.magnitude = function() {
     return Math.sqrt(this.x * this.x + this.y * this.y);
 }
 
 Point.prototype.normalize = function() {
-    return this.divideBy(this.length());
+    return this.divideBy(this.magnitude());
 }
 
 Point.prototype.flipY = function() {
@@ -29,122 +33,304 @@ Point.prototype.flipX = function() {
     return new Point(-this.x, this.y);
 }
 
-
-// RigidBody  /////////////////////////////////////////////////////////
-
-// I am attached to a SpriteMorph object and keep a reference to it
-// When needed I read and write information directly onto the SpriteMorph
-
-function RigidBody(morph, mass, restitution) {
-    this.init(morph, mass, restitution);
+Point.prototype.plus = function(point) {
+    this.x += point.x;
+    this.y += point.y;
+    return this;
 }
 
-RigidBody.prototype.init = function (morph, mass) {
-    this.initialCenter = morph.center();
-    this.mass = mass
+Point.prototype.minus = function(point) {
+    this.x -= point.x;
+    this.y -= point.y;
+    return this;
+}
+
+
+
+
+
+
+function RigidBody (morph, mass, restitution) {
+
+    //            INTERNAL DATA
+    // ------------------------------------------------------------------------
+    // Constants:
+    //     this.morph          SpriteMorph    Snap! SpriteMorph object
+    //     this.startX         Point          Associated morphs' start location
+    // ------------------------------------------------------------------------
     this.morph = morph;
-    this.velocity = new Point(10,20);
-    this.restitution = 0.9;
+    this.startX = morph.center();
+
+
+    //            PHYSICS DATA
+    // ------------------------------------------------------------------------
+    // Constants:
+    //     this.m;   scalar   Mass of the body
+    //     this.e;   scalar   Restitution coefficient (friction / bouncyness)
+    // ------------------------------------------------------------------------
+    // State:
+    //     this.p          Point    Position of the body
+    //     this.springs    Array    List of spring points
+    // ------------------------------------------------------------------------
+    // Derived:
+    //     this.v    Point    Velocity of the body
+    // ------------------------------------------------------------------------
+    // Computed:
+    //     this.f    Point    Force applied on the body
+    //     this.a    Point    Acceleration computed by as a = F / m (F = m x a)
+    // ------------------------------------------------------------------------
+    this.m = Math.max(0, mass ? mass : 0);
+    this.e = Math.max(0, restitution ? restitution : 0);
+    this.springs = new Array();
+    this.f = new Vector2d(0, 0);
+    this.v = new Vector2d(0, 0);
+    this.a = new Vector2d(0, 0);
+
+    // Setup event handler for morph drag & drop
+    this.setupDropHandler();
 }
 
-RigidBody.prototype.position = function() {
-    return this.morph.center();
+// For ease of use define the object property 'x' so that one can assign
+// a position directly like other member properties, while delegating
+// to the morph's center() && setCenter() methods
+Object.defineProperty(RigidBody.prototype, 'p', {
+    get: function() { return this.morph.center() },
+    set: function(point) { this.morph.setCenter(point); },
+    enumerable: true,
+    configurable: true
+});
+
+RigidBody.prototype.removeSpring = function(other) {
+    for (var i = 0; i < this.springs.length; i++) {
+        var spring = this.springs[i];
+        console.log(spring.obj === spring.obj);
+        if (spring && spring.obj.morph.name == other.morph.name) {
+            this.springs.splice(i,1);
+        }
+    }
 }
 
-RigidBody.prototype.setPosition = function(x, y) {
-    //this.previousPosition = this.position();
-    this.morph.setCenter(new Point(x,y));
+RigidBody.prototype.addSpring = function(other, stiffness, length) {
+    this.removeSpring(other);
+    this.springs.push({
+        obj: other,
+        stiffness: stiffness,
+        length: length
+    });
+    console.log(other.morph.name + " has " + this.springs.length + " spring(s)");
 }
 
-RigidBody.prototype.setVelocity = function(x, y) {
-    this.velocity.x = x;
-    this.velocity.y = y;
+RigidBody.prototype.springForce = function(p, stiffness, length) {
+    var springForce = new Vector2d(0, 0),
+        distance = this.p.subtract(p);
+    distance = distance.normalize().scaleBy(distance.magnitude() - length);
+    springForce = distance.scaleBy(-1 * stiffness);
+    springForce.minus(this.v.scaleBy(0.1));
+    return springForce;
+}
+
+RigidBody.prototype.springsNetForce = function() {
+    var springsNetForce = new Vector2d(0, 0);
+    for (var i = 0; i < this.springs.length; i++) {
+        var spring = this.springs[i],
+            springForce = this.springForce(spring.obj.p, spring.stiffness, spring.length);
+        springsNetForce.plus(springForce);
+    }
+    return springsNetForce;
+}
+
+RigidBody.prototype.setupDropHandler = function() {
+    var rb = this;
+    var morph = this.morph;
+    if (!(morph.rigidBody instanceof RigidBody)) {
+        var dropped = morph.justDropped;
+        morph.justDropped = function() {
+            if (morph.rigidBody instanceof RigidBody) {
+                morph.rigidBody.justDropped();
+            }
+            dropped.call(morph);
+        }
+    }
+}
+
+RigidBody.prototype.justDropped = function() {
+    this.reset();
 }
 
 RigidBody.prototype.reset = function() {
-    this.morph.setCenter(this.initialCenter);
+    this.f = new Vector2d(0, 0);
+    this.v = new Vector2d(0, 0);
+    this.a = new Vector2d(0, 0);
 }
+
+RigidBody.prototype.integrate = function(dt) {
+
+    var a = this.f.divideBy(this.m);
+    this.v.plus(a.scaleBy(dt));
+    this.p = this.p.add(this.v.scaleBy(dt));
+}
+
+RigidBody.prototype.overlapsBoundingBox = function(other) {
+    return this.p.intersects(other.p);
+}
+
+RigidBody.prototype.overlapsPixelPerfect = function(other) {
+
+    var pos = this.morph.isTouching(other.morph);
+    return pos;
+}
+
+
+
+
 
 
 // RigidBodySolver  ///////////////////////////////////////////////////
 
-function RigidBodySolver(morph) {
-    this.morph = morph;
-    this.init();
-}
-
-RigidBodySolver.prototype.init = function(gravity, timescale) {
-    this.airDensity = 1.2041; //http://en.wikipedia.org/wiki/Density_of_air
-    this.gravity = gravity && gravity instanceof Point ? gravity : new Point(0, -9.81);
+function RigidBodySolver() {
+    //            INTERNAL DATA
+    // ------------------------------------------------------------------------
+    // Constants:
+    //     morph        StageMorph    Snap! StageMorph object
+    //     isRunning    Boolean       Flag if simulation is running
+    // ------------------------------------------------------------------------
+    // State:
+    //     lastTime         Long          Last time step() was run
+    //     timeLeftOver     Long          Time not used in computation
+    // ------------------------------------------------------------------------
+    this.morph = null;
     this.isRunning = true;
-    this.dt = 0.03;
+    this.lastTime = Date.now();
+    this.timeLeftOver = 0;
+
+    //            PHYSICS DATA
+    // ------------------------------------------------------------------------
+    // Constants=
+    //     g                Point     Gravity direction and strength vector
+    //     stepSize         scalar    Size of the computation step in ms
+    //     stepSizeScale    scalar    Scale for the stepsize (basically screen scale)
+    // ------------------------------------------------------------------------
+    this.g = new Vector2d(0, 9.8);
+    this.stepSize = 4; // 1s / 0.016s = 62,5 fps
+    this.stepSizeScale = 0.01;
 }
 
-RigidBodySolver.prototype.start = function() {
-    this.init(this.gravity);
+RigidBodySolver.prototype.create = function() {
+    var obj = Object.create(this);
+    return obj;
+}
+
+RigidBodySolver.prototype.start= function() {
+    this.isRunning = true;
+    this.time = Date.now();
 }
 
 RigidBodySolver.prototype.stop = function() {
     this.isRunning = false;
 }
 
-RigidBodySolver.prototype.Verlet = function(bodies) {
+RigidBodySolver.prototype.weightForce = function(body) {
+
+    // Weight Force ( Fw = m * g)
+    var Fw = this.g.scaleBy(body.m);
+    return Fw;
+}
+
+RigidBodySolver.prototype.airDragForce = function(body) {
+
+    // Air Drag Force ( FD = 1/2 * rho * v² * Cd * A)
+    var Cd = 0.47;
+    var A = body.morph.width() * 0.001;
+    var rho = 1.2041;
+    var v = body.v.magnitude();
+    var vv = v*v;
+    var Fd = body.v.normalize().scaleBy(-1 * 0.5 * Cd * rho * vv * Cd * A);
+    return Fd;
+}
+
+RigidBodySolver.prototype.applyForces = function(bodies, dt) {
+
     var solver = this;
-    bodies.forEach(function(body) {
-        var p = body.position();
-        var v = body.velocity;
-        var a = solver.gravity;
-        var dt = solver.dt;
-
-        // velocity verlet
-        var posx = p.x + v.x*dt + 0.5*a.x*dt*dt;
-        var posy = p.y - v.y*dt + 0.5*a.y*dt*dt;
-
-        var vx = v.x + a.x*dt;
-        var vy = v.y + a.y*dt;
-
-        body.setPosition(posx, posy);
-        body.setVelocity(vx, vy);
-
-        //console.log("p:" + p + " v:" + v);
+    bodies.forEach(function (body) {
+        if (body instanceof RigidBody && body.m > 0) {
+            body.f = new Vector2d(0, 0);
+            body.f.plus(solver.weightForce(body));
+            body.f.plus(solver.airDragForce(body));
+            body.f.plus(body.springsNetForce());
+        }
     });
 }
 
-RigidBodySolver.prototype.SatisfyConstraints = function(bodies) {
-    var stage = this.morph;
+RigidBodySolver.prototype.updateBodies = function(bodies, dt) {
+
     var solver = this;
-    bodies.forEach(function(body) {
-        var fb = body.morph.nestingBounds();
-        if (stage.bounds.containsRectangle(fb)) { return null; }
-
-        if (fb.right() > stage.right() ||
-            fb.left() < stage.left()) {
-            body.velocity = body.velocity.flipX().multiplyBy(new Point(body.restittution, 1));
+    bodies.forEach(function (body) {
+        if (body instanceof RigidBody && body.m > 0) {
+            body.integrate(dt);
         }
-        if (fb.bottom() > stage.bottom() ||
-            fb.top() < stage.top()) {
-            body.velocity = body.velocity.flipY().multiplyBy(new Point(1, body.restitution));
-        }
-
     });
 }
 
-RigidBodySolver.prototype.AccumulateForces = function(bodies) {
+RigidBodySolver.prototype.handleCollisions = function(collisions) {
+
+    var solver = this;
+
+    collisions.forEach(function(collision) {
+        var bodyA = collision.a;
+        var bodyB = collision.b;
+
+        if (bodyA && bodyA.m > 0) {
+            bodyA.v.scaleBy(-0.5);
+            bodyA.v = new Vector2d(0, 0);
+        }
+
+        if (bodyB && bodyB.m > 0) {
+            bodyB.v.scaleBy(-0.5);
+            bodyB.v = new Vector2d(0, 0);
+        }
+    });
 }
 
-RigidBodySolver.prototype.Timestep = function(bodies) {
-    this.Verlet(bodies);
-    this.AccumulateForces(bodies);
-    this.SatisfyConstraints(bodies);
+RigidBodySolver.prototype.detectCollisionsPhase1 = function(bodies) {
+
+    var collisions = [];
+    for (var i = 0; i < bodies.length; i++) {
+        var bodyA = bodies[i];
+        for (var j = i+0; j < bodies.length; j++) {
+            var bodyB = bodies[j];
+            if (i != j && (bodyA.m > 0 || bodyB.m > 0)) {
+                if (bodyA.overlapsBoundingBox(bodyB)) {
+                    if (bodyA.overlapsPixelPerfect(bodyB)) {
+                        collisions.push({ a: bodyA, b: bodyB });
+                    }
+                }
+            }
+        }
+    }
+    return collisions;
 }
 
-
-// CollisionSolver  ///////////////////////////////////////////////////
-
-function CollisionSolver() {
+RigidBodySolver.prototype.solveCollisions = function(collisions) {
 
 }
 
-CollisionSolver.prototype.findCollisions = function(bodies) {
+RigidBodySolver.prototype.step = function(bodies) {
 
+    var now = Date.now(),
+        elapsedTime = (now - this.lastTime) + this.timeLeftOver,
+        timesteps = Math.floor(elapsedTime / this.stepSize),
+        dt = this.stepSize * this.stepSizeScale;
+    this.lastTime = now;
+    this.timeLeftOver = elapsedTime - timesteps * this.stepSize;
+
+    for (var i = 0; i < timesteps; i++) {
+
+        this.applyForces(bodies, dt);
+
+        //var collisions = [];
+        //collisions = this.detectCollisions(bodies);
+        //this.solveCollisions(collisions);
+
+        this.updateBodies(bodies, dt);
+    }
 }
