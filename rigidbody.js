@@ -18,12 +18,12 @@ function Vector2d(x,y) {
     return new Point(x, y);
 }
 
-Point.prototype.length = function() {
+Point.prototype.magnitude = function() {
     return Math.sqrt(this.x * this.x + this.y * this.y);
 }
 
 Point.prototype.normalize = function() {
-    return this.divideBy(this.length());
+    return this.divideBy(this.magnitude());
 }
 
 Point.prototype.flipY = function() {
@@ -34,12 +34,24 @@ Point.prototype.flipX = function() {
     return new Point(-this.x, this.y);
 }
 
-Point.prototype.accum = function(point) {
+Point.prototype.plus = function(point) {
     this.x += point.x;
     this.y += point.y;
+    return this;
 }
 
-function RigidBody (morph, mass) {
+Point.prototype.minus = function(point) {
+    this.x -= point.x;
+    this.y -= point.y;
+    return this;
+}
+
+
+
+
+
+
+function RigidBody (morph, mass, restitution) {
 
     //            INTERNAL DATA
     // ------------------------------------------------------------------------
@@ -55,82 +67,160 @@ function RigidBody (morph, mass) {
     // ------------------------------------------------------------------------
     // Constants:
     //     this.m;   scalar   Mass of the body
+    //     this.e;   scalar   Restitution coefficient (friction / bouncyness)
     // ------------------------------------------------------------------------
     // State:
-    //     this.x    Point    Position of the body
-    //     this.P    Point    Linear momentum of the body = m * v
+    //     this.p          Point    Position of the body
+    //     this.springs    Array    List of spring points
     // ------------------------------------------------------------------------
     // Derived:
     //     this.v    Point    Velocity of the body
     // ------------------------------------------------------------------------
     // Computed:
     //     this.f    Point    Force applied on the body
+    //     this.a    Point    Acceleration computed by as a = F / m (F = m x a)
     // ------------------------------------------------------------------------
-    this.m = Math.max(0, mass ? mass : 1);
-    this.P = new Vector2d(0, 0)
+    this.m = Math.max(0, mass ? mass : 0);
+    this.e = Math.max(0, restitution ? restitution : 0);
+    this.springs = new Array();
     this.f = new Vector2d(0, 0);
     this.v = new Vector2d(0, 0);
+    this.a = new Vector2d(0, 0);
+
+    // Setup event handler for morph drag & drop
+    this.setupDropHandler();
 }
 
 // For ease of use define the object property 'x' so that one can assign
 // a position directly like other member properties, while delegating
 // to the morph's center() && setCenter() methods
-Object.defineProperty(RigidBody.prototype, 'x', {
+Object.defineProperty(RigidBody.prototype, 'p', {
     get: function() { return this.morph.center() },
     set: function(point) { this.morph.setCenter(point); },
     enumerable: true,
     configurable: true
 });
 
+RigidBody.prototype.removeSpring = function(other) {
+    for (var i = 0; i < this.springs.length; i++) {
+        var spring = this.springs[i];
+        if (spring && spring.obj.morph.name == other.morph.name) {
+            this.springs.splice(i,1);
+        }
+    }
+}
+
+RigidBody.prototype.addSpring = function(other, stiffness, length) {
+    this.removeSpring(other);
+    this.springs.push({
+        obj: other,
+        stiffness: stiffness,
+        length: length
+    });
+    console.log(other.morph.name + " has " + this.springs.length + " spring(s)");
+}
+
+RigidBody.prototype.springForce = function(p, stiffness, length) {
+    var springForce = new Vector2d(0, 0),
+        distance = this.p.subtract(p);
+    distance = distance.normalize().scaleBy(distance.magnitude() - length);
+    springForce = distance.scaleBy(-1 * stiffness);
+    springForce.minus(this.v.scaleBy(0.1));
+    return springForce;
+}
+
+RigidBody.prototype.springsNetForce = function() {
+    var springsNetForce = new Vector2d(0, 0);
+    for (var i = 0; i < this.springs.length; i++) {
+        var spring = this.springs[i],
+            springForce = this.springForce(spring.obj.p, spring.stiffness, spring.length);
+        springsNetForce.plus(springForce);
+    }
+    return springsNetForce;
+}
+
+RigidBody.prototype.setupDropHandler = function() {
+    var rb = this;
+    var morph = this.morph;
+    if (!(morph.rigidBody instanceof RigidBody)) {
+        var dropped = morph.justDropped;
+        morph.justDropped = function() {
+            if (morph.rigidBody instanceof RigidBody) {
+                morph.rigidBody.justDropped();
+            }
+            dropped.call(morph);
+        }
+    }
+}
+
+RigidBody.prototype.justDropped = function() {
+    this.reset();
+}
+
 RigidBody.prototype.reset = function() {
-    this.P = new Vector2d(0, 0);
     this.f = new Vector2d(0, 0);
     this.v = new Vector2d(0, 0);
-    this.x = this.startX;
+    this.a = new Vector2d(0, 0);
 }
 
 RigidBody.prototype.integrate = function(dt) {
 
-    // Euler's Integration
-    this.x = this.x.add(this.v.scaleBy(dt).flipY());            // x = x + v*dt
-    this.P.accum(this.f.scaleBy(dt));                   // P = P + f*dt
-    var kdf = this.v.scaleBy(RigidBodySolver.kdl * dt); // kdf = v * kdl*dt
-    this.P.accum(kdf.neg());                           // P = P + (-kdf)
-
-    // Aux computation
-    this.v = this.P.divideBy(this.m);  // v = P / m   (as  P = m * v)
+    var a = this.f.divideBy(this.m);//.scaleBy(0.0001);
+    this.v.plus(a.scaleBy(dt));
+    this.p = this.p.add(this.v.scaleBy(dt));
 }
+
+RigidBody.prototype.overlapsBoundingBox = function(other) {
+    return this.p.intersects(other.p);
+}
+
+RigidBody.prototype.overlapsPixelPerfect = function(other) {
+
+    var pos = this.morph.isTouching(other.morph);
+    return pos;
+}
+
+
+
+
+
 
 // RigidBodySolver  ///////////////////////////////////////////////////
 
-function RigidBodySolver(morph) {
-
+function RigidBodySolver() {
     //            INTERNAL DATA
     // ------------------------------------------------------------------------
     // Constants:
-    //     this.morph        StageMorph    Snap! StageMorph object
-    //     this.isRunning    Boolean       Flag if simulation is running
+    //     morph        StageMorph    Snap! StageMorph object
+    //     isRunning    Boolean       Flag if simulation is running
     // ------------------------------------------------------------------------
     // State:
-    //     this.time         Long          Last time step() was run
+    //     lastTime         Long          Last time step() was run
+    //     timeLeftOver     Long          Time not used in computation
     // ------------------------------------------------------------------------
-    this.morph = morph;
+    this.morph = null;
     this.isRunning = true;
-    this.time = Date.now();
+    this.lastTime = Date.now();
+    this.timeLeftOver = 0;
 
     //            PHYSICS DATA
     // ------------------------------------------------------------------------
-    // Constants:
-    //     this.g           Point     Gravity direction and strength vector
-    //     this.numSteps    scalar    Number of computation iterations per dt
-    //     this.kdl         scalar    Linear Damping (Linear Momentum reduction)
+    // Constants=
+    //     g                Point     Gravity direction and strength vector
+    //     stepSize         scalar    Size of the computation step in ms
+    //     stepSizeScale    scalar    Scale for the stepsize (basically screen scale)
     // ------------------------------------------------------------------------
-    this.g = new Vector2d(0, -9.8);
-    this.numSteps = 10;
-    this.kdl = 0.1;
+    this.g = new Vector2d(0, 9.8);
+    this.stepSize = 4; // 1s / 0.016s = 62,5 fps
+    this.stepSizeScale = 0.01;
 }
 
-RigidBodySolver.prototype.start = function() {
+RigidBodySolver.prototype.create = function() {
+    var obj = Object.create(this);
+    return obj;
+}
+
+RigidBodySolver.prototype.start= function() {
     this.isRunning = true;
     this.time = Date.now();
 }
@@ -139,27 +229,108 @@ RigidBodySolver.prototype.stop = function() {
     this.isRunning = false;
 }
 
-RigidBodySolver.prototype.step = function(bodies, time) {
+RigidBodySolver.prototype.weightForce = function(body) {
 
-    var time = Date.now();
-    var dt = (time - this.time) / 300;
-    this.time = time;
-    var dt2 = dt / this.numSteps;
+    // Weight Force ( Fw = m * g)
+    var Fw = this.g.scaleBy(body.m);
+    return Fw;
+}
+
+RigidBodySolver.prototype.airDragForce = function(body) {
+    
+    // Air Drag Force ( FD = 1/2 * rho * v² * Cd * A)
+    var Cd = 0.47;
+    var A = 1;
+    var rho = 1.2041;
+    var v = body.v.magnitude();
+    var vv = v*v;
+    var Fd = body.v.normalize().scaleBy(-1 * 0.5 * Cd * rho * vv * Cd * A);
+    return Fd;
+}
+
+RigidBodySolver.prototype.applyForces = function(bodies, dt) {
+
+    var solver = this;
+    bodies.forEach(function (body) {
+        if (body instanceof RigidBody && body.m > 0) {
+            body.f = new Vector2d(0, 0);
+            body.f.plus(solver.weightForce(body));
+            body.f.plus(solver.airDragForce(body));
+            body.f.plus(body.springsNetForce());
+        }
+    });
+}
+
+RigidBodySolver.prototype.updateBodies = function(bodies, dt) {
+
+    var solver = this;
+    bodies.forEach(function (body) {
+        if (body instanceof RigidBody && body.m > 0) {
+            body.integrate(dt);
+        }
+    });
+}
+
+RigidBodySolver.prototype.handleCollisions = function(collisions) {
+
     var solver = this;
 
-console.log(dt2);
+    collisions.forEach(function(collision) {
+        var bodyA = collision.a;
+        var bodyB = collision.b;
 
-    for (var j = 0; j < this.numSteps; j++) {
+        if (bodyA && bodyA.m > 0) {
+            bodyA.v.scaleBy(-0.5);
+            bodyA.v = new Vector2d(0, 0);
+        }
 
-        bodies.forEach(function (body) {
-        
-            // Accumulate gravity on bodies
-            body.f.accum(solver.g.scaleBy(body.m));  // f = m * g
+        if (bodyB && bodyB.m > 0) {
+            bodyB.v.scaleBy(-0.5);
+            bodyB.v = new Vector2d(0, 0);
+        }
+    });
+}
 
-            // Compute body stuff
-            if (body.m >= 0) {
-                body.integrate(dt2);
+RigidBodySolver.prototype.detectCollisionsPhase1 = function(bodies) {
+
+    var collisions = [];
+    for (var i = 0; i < bodies.length; i++) {
+        var bodyA = bodies[i];
+        for (var j = i+0; j < bodies.length; j++) {
+            var bodyB = bodies[j];
+            if (i != j && (bodyA.m > 0 || bodyB.m > 0)) {
+                if (bodyA.overlapsBoundingBox(bodyB)) {
+                    if (bodyA.overlapsPixelPerfect(bodyB)) {
+                        collisions.push({ a: bodyA, b: bodyB });
+                    }
+                }
             }
-        });
+        }
+    }
+    return collisions;
+}
+
+RigidBodySolver.prototype.solveCollisions = function(collisions) {
+
+}
+
+RigidBodySolver.prototype.step = function(bodies) {
+
+    var now = Date.now(),
+        elapsedTime = (now - this.lastTime) + this.timeLeftOver,
+        timesteps = Math.floor(elapsedTime / this.stepSize),
+        dt = this.stepSize * this.stepSizeScale;
+    this.lastTime = now;
+    this.timeLeftOver = elapsedTime - timesteps * this.stepSize;
+
+    for (var i = 0; i < timesteps; i++) {
+
+        this.applyForces(bodies, dt);
+
+        //var collisions = [];
+        //collisions = this.detectCollisions(bodies);
+        //this.solveCollisions(collisions);
+
+        this.updateBodies(bodies, dt);
     }
 }
