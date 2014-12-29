@@ -100,11 +100,10 @@ Object.defineProperty(RigidBody.prototype, 'p', {
     configurable: true
 });
 
-RigidBody.prototype.removeSpring = function(other) {
+RigidBody.prototype.removeSpring = function(body) {
     for (var i = 0; i < this.springs.length; i++) {
         var spring = this.springs[i];
-        console.log(spring.obj === spring.obj);
-        if (spring && spring.obj.morph.name == other.morph.name) {
+        if (spring && spring.obj == body) {
             this.springs.splice(i,1);
         }
     }
@@ -117,7 +116,6 @@ RigidBody.prototype.addSpring = function(other, stiffness, length) {
         stiffness: stiffness,
         length: length
     });
-    console.log(other.morph.name + " has " + this.springs.length + " spring(s)");
 }
 
 RigidBody.prototype.springForce = function(p, stiffness, length) {

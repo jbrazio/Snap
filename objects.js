@@ -4364,7 +4364,7 @@ SpriteMorph.prototype.enableSpringTo = function(name, stiffness, length) {
         me = this;
     morphs.forEach(function (other) {
         if (me.rigidBody && me.rigidBody instanceof RigidBody) {
-            if (!other.rigidBody || other.rigidBody instanceof RigidBody) {
+            if (!other.rigidBody || !(other.rigidBody instanceof RigidBody)) {
                 other.rigidBody = new RigidBody(other, 0, 0);
             }
             me.rigidBody.addSpring(other.rigidBody, stiffness, length);
