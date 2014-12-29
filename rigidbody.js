@@ -161,11 +161,19 @@ RigidBody.prototype.reset = function() {
     this.a = new Vector2d(0, 0);
 }
 
-RigidBody.prototype.integrate = function(dt) {
+RigidBody.prototype.updatePositions = function(dt) {
+    this.p = this.p.add(this.v.scaleBy(dt)).add(this.a.scaleBy(0.5*dt*dt));
+}
 
-    var a = this.f.divideBy(this.m);
-    this.v.plus(a.scaleBy(dt));
-    this.p = this.p.add(this.v.scaleBy(dt));
+RigidBody.prototype.update = function(dt) {
+
+    // var a = this.f.divideBy(this.m);
+    // this.v.plus(a.scaleBy(dt));
+    // this.p = this.p.add(this.v.scaleBy(dt));
+    var new_a = this.f.divideBy(this.m);
+    var avg_a = this.a.add(new_a).scaleBy(0.5);
+    this.v.plus(avg_a.scaleBy(dt));
+    this.a = new_a;
 }
 
 RigidBody.prototype.overlapsBoundingBox = function(other) {
@@ -259,16 +267,6 @@ RigidBodySolver.prototype.applyForces = function(bodies, dt) {
     });
 }
 
-RigidBodySolver.prototype.updateBodies = function(bodies, dt) {
-
-    var solver = this;
-    bodies.forEach(function (body) {
-        if (body instanceof RigidBody && body.m > 0) {
-            body.integrate(dt);
-        }
-    });
-}
-
 RigidBodySolver.prototype.handleCollisions = function(collisions) {
 
     var solver = this;
@@ -323,12 +321,25 @@ RigidBodySolver.prototype.step = function(bodies) {
 
     for (var i = 0; i < timesteps; i++) {
 
+        // Velocity Verlet Start - Update Positions
+        bodies.forEach(function (body) {
+            if (body instanceof RigidBody && body.m > 0) {
+                body.updatePositions(dt);
+            }
+        })
+
         this.applyForces(bodies, dt);
 
         //var collisions = [];
         //collisions = this.detectCollisions(bodies);
         //this.solveCollisions(collisions);
 
-        this.updateBodies(bodies, dt);
+        // Velocity Verlet Conclusion - Compute average acceleration & velocity
+        bodies.forEach(function (body) {
+            if (body instanceof RigidBody && body.m > 0) {
+                body.update(dt);
+            }
+        })
+        //this.updateBodies(bodies, dt);
     }
 }
