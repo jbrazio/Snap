@@ -9,6 +9,8 @@ var RigidBodySolver;
 var CollisionSolver;
 
 
+var RB_DEBUG = false;
+
 // Point Hack /////////////////////////////////////////////////////////
 
 // I extend the Point class already in Snap!
@@ -17,32 +19,40 @@ function Vector2d(x,y) {
     return new Point(x, y);
 }
 
-Point.prototype.magnitude = function() {
+Point.prototype.magnitude = function () {
     return Math.sqrt(this.x * this.x + this.y * this.y);
 }
 
-Point.prototype.normalize = function() {
+Point.prototype.normalize = function () {
     return this.divideBy(this.magnitude());
 }
 
-Point.prototype.flipY = function() {
+Point.prototype.flipY = function () {
     return new Point(this.x, -this.y);
 }
 
-Point.prototype.flipX = function() {
+Point.prototype.flipX = function () {
     return new Point(-this.x, this.y);
 }
 
-Point.prototype.plus = function(point) {
+Point.prototype.plus = function (point) {
     this.x += point.x;
     this.y += point.y;
     return this;
 }
 
-Point.prototype.minus = function(point) {
+Point.prototype.minus = function (point) {
     this.x -= point.x;
     this.y -= point.y;
     return this;
+}
+
+Point.prototype.swap = function () {
+    return new Point (-1 * this.y, this.x);
+}
+
+Point.prototype.swap2 = function () {
+    return new Point (this.y, -1 * this.x);
 }
 
 
@@ -94,13 +104,13 @@ function RigidBody (morph, mass, restitution) {
 // a position directly like other member properties, while delegating
 // to the morph's center() && setCenter() methods
 Object.defineProperty(RigidBody.prototype, 'p', {
-    get: function() { return this.morph.center() },
-    set: function(point) { this.morph.setCenter(point); },
+    get: function () { return this.morph.center() },
+    set: function (point) { this.morph.setCenter(point); },
     enumerable: true,
     configurable: true
 });
 
-RigidBody.prototype.removeSpring = function(body) {
+RigidBody.prototype.removeSpring = function (body) {
     for (var i = 0; i < this.springs.length; i++) {
         var spring = this.springs[i];
         if (spring && spring.obj == body) {
@@ -109,7 +119,7 @@ RigidBody.prototype.removeSpring = function(body) {
     }
 }
 
-RigidBody.prototype.addSpring = function(other, stiffness, length) {
+RigidBody.prototype.addSpring = function (other, stiffness, length) {
     this.removeSpring(other);
     this.springs.push({
         obj: other,
@@ -118,7 +128,7 @@ RigidBody.prototype.addSpring = function(other, stiffness, length) {
     });
 }
 
-RigidBody.prototype.springForce = function(p, stiffness, length) {
+RigidBody.prototype.springForce = function (p, stiffness, length) {
     var springForce = new Vector2d(0, 0),
         distance = this.p.subtract(p);
     distance = distance.normalize().scaleBy(distance.magnitude() - length);
@@ -127,7 +137,7 @@ RigidBody.prototype.springForce = function(p, stiffness, length) {
     return springForce;
 }
 
-RigidBody.prototype.springsNetForce = function() {
+RigidBody.prototype.springsNetForce = function () {
     var springsNetForce = new Vector2d(0, 0);
     for (var i = 0; i < this.springs.length; i++) {
         var spring = this.springs[i],
@@ -137,12 +147,12 @@ RigidBody.prototype.springsNetForce = function() {
     return springsNetForce;
 }
 
-RigidBody.prototype.setupDropHandler = function() {
+RigidBody.prototype.setupDropHandler = function () {
     var rb = this;
     var morph = this.morph;
     if (!(morph.rigidBody instanceof RigidBody)) {
         var dropped = morph.justDropped;
-        morph.justDropped = function() {
+        morph.justDropped = function () {
             if (morph.rigidBody instanceof RigidBody) {
                 morph.rigidBody.justDropped();
             }
@@ -151,21 +161,22 @@ RigidBody.prototype.setupDropHandler = function() {
     }
 }
 
-RigidBody.prototype.justDropped = function() {
+RigidBody.prototype.justDropped = function () {
     this.reset();
 }
 
-RigidBody.prototype.reset = function() {
+RigidBody.prototype.reset = function () {
     this.f = new Vector2d(0, 0);
     this.v = new Vector2d(0, 0);
     this.a = new Vector2d(0, 0);
+    this.springs = [];
 }
 
-RigidBody.prototype.updatePositions = function(dt) {
-    this.p = this.p.add(this.v.scaleBy(dt)).add(this.a.scaleBy(0.5*dt*dt));
+RigidBody.prototype.updatePositions = function (dt) {
+    this.p = this.p.add(this.v.scaleBy(dt));//.add(this.a.scaleBy(0.5*dt*dt));
 }
 
-RigidBody.prototype.update = function(dt) {
+RigidBody.prototype.update = function (dt) {
 
     // var a = this.f.divideBy(this.m);
     // this.v.plus(a.scaleBy(dt));
@@ -173,17 +184,64 @@ RigidBody.prototype.update = function(dt) {
     var new_a = this.f.divideBy(this.m);
     var avg_a = this.a.add(new_a).scaleBy(0.5);
     this.v.plus(avg_a.scaleBy(dt));
-    this.a = new_a;
+    this.a = avg_a;
 }
 
-RigidBody.prototype.overlapsBoundingBox = function(other) {
-    return this.p.intersects(other.p);
+RigidBody.prototype.overlapsBoundingBox = function (other) {
+    return this.morph.bounds.intersects(other.morph.bounds);
 }
 
-RigidBody.prototype.overlapsPixelPerfect = function(other) {
+RigidBody.prototype.collisionData = function (other) {
+    return this._collisionData(other);
+}
 
-    var pos = this.morph.isTouching(other.morph);
-    return pos;
+RigidBody.prototype._collisionData = function (other) {
+    var oRect = this.morph.bounds.intersect(other.morph.bounds),
+        oImg = this.morph.overlappingImage(other.morph),
+        data = oImg.getContext('2d')
+                   .getImageData(1, 1, oImg.width, oImg.height)
+                   .data,
+        p = undefined;
+
+    // compute contact points within each sprite
+    for (var i = 3; i < data.length; i+=4) {
+        if (data[i] !== 0) {
+            var pos = Math.floor(i/4),
+                y = Math.floor(pos/oImg.width),
+                x = pos - y * oImg.width;
+                p = new Vector2d(oRect.left()+x,
+                                 oRect.top()+y);
+            break;
+        }
+    }
+
+    if (isNil(p)) {
+        return null;
+    }
+
+    function findClosestCorner(morph, p) {
+        var corners = [morph.topLeft(), morph.topRight(), morph.bottomLeft(), morph.bottomRight()],
+            n = undefined;
+        corners.forEach(function (corner) {
+            if (isNil(n) || corner.subtract(p).magnitude < n.magnitude()) {
+                n = corner.subtract(p);
+            }
+        });
+        var n1 = n.swap(), n2 = n.swap2();
+        n = morph.center().subtract(n1).magnitude() < morph.center().subtract(n2).magnitude() ? n1.normalize() : n2.normalize();
+        return n;
+    }
+
+    an = findClosestCorner(this.morph, p);
+    bn = findClosestCorner(other.morph, p);
+
+    return {
+        a: this,
+        b: other,
+        p: p,
+        an: an,
+        bn: bn
+    }
 }
 
 
@@ -193,7 +251,7 @@ RigidBody.prototype.overlapsPixelPerfect = function(other) {
 
 // RigidBodySolver  ///////////////////////////////////////////////////
 
-function RigidBodySolver() {
+function RigidBodySolver(morph) {
     //            INTERNAL DATA
     // ------------------------------------------------------------------------
     // Constants:
@@ -204,7 +262,7 @@ function RigidBodySolver() {
     //     lastTime         Long          Last time step() was run
     //     timeLeftOver     Long          Time not used in computation
     // ------------------------------------------------------------------------
-    this.morph = null;
+    this.morph = morph;
     this.isRunning = true;
     this.lastTime = Date.now();
     this.timeLeftOver = 0;
@@ -221,32 +279,32 @@ function RigidBodySolver() {
     this.stepSizeScale = 0.01;
 }
 
-RigidBodySolver.prototype.create = function() {
+RigidBodySolver.prototype.create = function () {
     var obj = Object.create(this);
     return obj;
 }
 
-RigidBodySolver.prototype.start= function() {
+RigidBodySolver.prototype.start= function () {
     this.isRunning = true;
     this.time = Date.now();
 }
 
-RigidBodySolver.prototype.stop = function() {
+RigidBodySolver.prototype.stop = function () {
     this.isRunning = false;
 }
 
-RigidBodySolver.prototype.weightForce = function(body) {
+RigidBodySolver.prototype.weightForce = function (body) {
 
     // Weight Force ( Fw = m * g)
     var Fw = this.g.scaleBy(body.m);
     return Fw;
 }
 
-RigidBodySolver.prototype.airDragForce = function(body) {
+RigidBodySolver.prototype.airDragForce = function (body) {
 
     // Air Drag Force ( FD = 1/2 * rho * v² * Cd * A)
     var Cd = 0.47;
-    var A = body.morph.width() * 0.001;
+    var A = 0.5; //body.morph.width() * 0.001;
     var rho = 1.2041;
     var v = body.v.magnitude();
     var vv = v*v;
@@ -254,7 +312,7 @@ RigidBodySolver.prototype.airDragForce = function(body) {
     return Fd;
 }
 
-RigidBodySolver.prototype.applyForces = function(bodies, dt) {
+RigidBodySolver.prototype.applyForces = function (bodies, dt) {
 
     var solver = this;
     bodies.forEach(function (body) {
@@ -267,27 +325,8 @@ RigidBodySolver.prototype.applyForces = function(bodies, dt) {
     });
 }
 
-RigidBodySolver.prototype.handleCollisions = function(collisions) {
+RigidBodySolver.prototype.detectCollisions = function (bodies) {
 
-    var solver = this;
-
-    collisions.forEach(function(collision) {
-        var bodyA = collision.a;
-        var bodyB = collision.b;
-
-        if (bodyA && bodyA.m > 0) {
-            bodyA.v.scaleBy(-0.5);
-            bodyA.v = new Vector2d(0, 0);
-        }
-
-        if (bodyB && bodyB.m > 0) {
-            bodyB.v.scaleBy(-0.5);
-            bodyB.v = new Vector2d(0, 0);
-        }
-    });
-}
-
-RigidBodySolver.prototype.detectCollisionsPhase1 = function(bodies) {
 
     var collisions = [];
     for (var i = 0; i < bodies.length; i++) {
@@ -296,8 +335,9 @@ RigidBodySolver.prototype.detectCollisionsPhase1 = function(bodies) {
             var bodyB = bodies[j];
             if (i != j && (bodyA.m > 0 || bodyB.m > 0)) {
                 if (bodyA.overlapsBoundingBox(bodyB)) {
-                    if (bodyA.overlapsPixelPerfect(bodyB)) {
-                        collisions.push({ a: bodyA, b: bodyB });
+                    var collisionData = bodyA.collisionData(bodyB);
+                    if (!isNil(collisionData)) {
+                        collisions.push(collisionData);
                     }
                 }
             }
@@ -306,11 +346,52 @@ RigidBodySolver.prototype.detectCollisionsPhase1 = function(bodies) {
     return collisions;
 }
 
-RigidBodySolver.prototype.solveCollisions = function(collisions) {
+RigidBodySolver.prototype.solveCollisions = function (collisions, dt) {
 
+    var me = this;
+    collisions.forEach(function (collision) {
+
+        var a = collision.a,
+            an = collision.an,
+            b = collision.b,
+            bn = collision.bn,
+            p = collision.p,
+            e = 0.5 * (a.e + b.e);
+        a.v = an.scaleBy(b.v.magnitude()*e);
+        b.v = bn.scaleBy(a.v.magnitude()*e);
+
+        me.drawCollisionInfo(a, an, b, bn, p, e);
+    });
 }
 
-RigidBodySolver.prototype.step = function(bodies) {
+RigidBodySolver.prototype.drawCollisionInfo = function (a, an, b, bn, p, e) {
+
+    if (!RB_DEBUG) { return; }
+
+    var stage = this.morph.parentThatIsA(StageMorph),
+        ctx = stage.image.getContext("2d");
+
+    ctx.fillStyle="white";
+    ctx.fillRect(0,0, ctx.canvas.width, ctx.canvas.height);
+    ctx.strokeWidth=10;
+
+    ctx.beginPath();
+    ctx.strokeStyle="red";
+    //ctx.rect(p.x-stage.left(), p.y-stage.top(), 2,2);
+    ctx.moveTo(p.x-stage.left(), p.y-stage.top());
+    ctx.lineTo(p.x-stage.left()+an.scaleBy(100).x, p.y-stage.top()+an.scaleBy(100).y);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.strokeStyle="green";
+    //ctx.rect(p.x-stage.left(), p.y-stage.top(), 2, 2);
+    ctx.moveTo(p.x-stage.left(), p.y-stage.top());
+    ctx.lineTo(p.x-stage.left()+bn.scaleBy(100).x, p.y-stage.top()+bn.scaleBy(100).y);
+
+    ctx.stroke();
+}
+
+RigidBodySolver.prototype.step = function (bodies) {
 
     var now = Date.now(),
         elapsedTime = (now - this.lastTime) + this.timeLeftOver,
@@ -330,9 +411,9 @@ RigidBodySolver.prototype.step = function(bodies) {
 
         this.applyForces(bodies, dt);
 
-        //var collisions = [];
-        //collisions = this.detectCollisions(bodies);
-        //this.solveCollisions(collisions);
+        var collisions = [];
+        collisions = this.detectCollisions(bodies);
+        this.solveCollisions(collisions);
 
         // Velocity Verlet Conclusion - Compute average acceleration & velocity
         bodies.forEach(function (body) {
@@ -340,6 +421,5 @@ RigidBodySolver.prototype.step = function(bodies) {
                 body.update(dt);
             }
         })
-        //this.updateBodies(bodies, dt);
     }
 }
