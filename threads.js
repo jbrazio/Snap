@@ -2481,11 +2481,15 @@ Process.prototype.reportStreamingCamera = function () {
 };
 
 Process.prototype.reportCameraMotion = function () {
-    if (this.reportStreamingCamera()) {
+    if( this.reportStreamingCamera() ) {
         var thisObj = this.blockReceiver();
         var motionCanvas = this.getCameraMotionCanvas();
-        var motion = this.getCameraMotion(motionCanvas, thisObj);
-        if (motion > 10) {
+
+
+        var motion = this.getCameraMotion( motionCanvas, thisObj );
+
+
+        if( motion > 10 ) {
             return true;
         }
     }
@@ -2815,89 +2819,174 @@ Process.prototype.doPlayNoteForSecs = function (pitch, secs) {
 // Process camera streaming primitives
 
 Process.prototype.doStreamCamera = function () {
-    if ((Date.now() - this.context.startTime) < 3000) {
-        // 20 FPS is enough
-        this.pushContext('doYield');
+    // Limits the webcam refresh rate to about 20 fps
+    if( (Date.now() - this.context.startTime) < 3000 ) {
+        this.pushContext( 'doYield' );
         this.pushContext();
         return;
     }
-    var myself = this;
-    var video = this.context.activeStream || null;
 
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (!stage.trailsCanvas) {
-        stage.trailsCanvas = newCanvas(stage.dimensions);
+    var video  = this.context.webcamStream || null;
+    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph ) || null;
+
+    if( ! stage.trailsCanvas ) {
+        stage.trailsCanvas = newCanvas( stage.dimensions );
     }
 
-    error = function (msg) {
-       var err = { name: 'Camera', message: msg };
-       myself.handleError(err);
-    };
+    stage.webcamStreaming  = false;
 
-    stage.streamingCamera = false;
-
-    if (video === null) {
-        video = document.createElement('video');
-        video.width = stage.dimensions.x;
+    if( ! video ) {
+        // Video object that will allow us to connect to the webcam
+        video        = document.createElement( 'video' );
+        video.width  = stage.dimensions.x;
         video.height = stage.dimensions.y;
 
-        this.context.activeStream = video;
+        video.onloadedmetadata = function() {
+            video.play();
+        };
 
-        var videoObject = {'video': true, 'audio': false};
+        this.context.webcamStream = video;
+        stage.lastCameraCanvas    = newCanvas( stage.dimensions );
 
-        navigator.getUserMedia_ = (navigator.getUserMedia ||
-                navigator.webkitGetUserMedia ||
-                navigator.mozGetUserMedia ||
-                navigator.msGetUserMedia);
+        // Cross browser support
+        navigator.getUserMedia = (
+            navigator.getUserMedia ||
+            navigator.webkitGetUserMedia ||
+            navigator.mozGetUserMedia ||
+            navigator.msGetUserMedia
+        );
 
-        if (!! navigator.getUserMedia_) {
-            navigator.getUserMedia_(videoObject, function (stream) {
-                window.URL_ = window.URL || window.webkitURL;
-                video.src = window.URL_.createObjectURL(stream);
-                video.play();
-            }, error);
+        if( !! navigator.getUserMedia ) {
+            navigator.getUserMedia(
+                {
+                    'video': true,
+                    'audio': false
+                },
+
+                function (localMediaStream) {
+                    /*
+                        Firefox Nightly right now needs you to set the mozSrcObject property of the
+                        video element in order to play it; for other browsers, set the src attribute.
+                        Whilst Firefox can use the stream directly, Webkit and Opera need to create
+                        an object URL from it. This all will become standardized in the near future.
+                    */
+                    if (navigator.mozGetUserMedia) {
+                        video.mozSrcObject = localMediaStream;
+                    } else {
+                        var vendorURL = window.URL || window.webkitURL;
+                        video.src = vendorURL.createObjectURL( localMediaStream );
+                    }
+                },
+
+                function (err) {
+                     throw new Error( 'The following error occured: ' + err );
+                }
+            );
         } else {
-            error('getUserMedia not supported');
+            throw new Error( 'getUserMedia not supported by this browser.' );
         }
-        stage.lastCameraCanvas = newCanvas(stage.dimensions);
+
     } else {
-        var canvas = stage.trailsCanvas;
-        var context = canvas.getContext('2d');
+        var canvas  = stage.trailsCanvas;
+        var context = canvas.getContext( '2d' );
 
         // Mirror webcam image
         context.translate( context.width, 0 );
         context.scale( -1, 1 );
 
-        if (video.readyState == 4) {
+        if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
             try {
-    // https://stackoverflow.com/questions/23840880/check-whether-canvas-is-black
-    // check whether lastCameraCanvas is white -> copy video canvas
-    // otherwise you would have a 'motion' when the first camera picture is loaded
-                var tmp = document.createElement('canvas'),
-                    ctx = tmp.getContext('2d'), result;
-                tmp.width = tmp.height = 1;
-                ctx.drawImage(stage.lastCameraCanvas, 0, 0, 1, 1);
-                result = ctx.getImageData(0, 0, 1, 1);
-                if (result.data[0] + result.data[1] + result.data[2]
-                        + result.data[3] === 0) {
-                    stage.lastCameraCanvas.getContext('2d').
-                        drawImage(video, 0, 0, video.width, video.height);
+                // Video width crop calculation
+                if( video.videoWidth > stage.dimensions.x ) {
+                    var sx = (video.videoWidth - stage.dimensions.x) /2;
+                    var swidth = stage.dimensions.x;
                 } else {
-                    var dest = stage.lastCameraCanvas.getContext('2d');
-                    dest.drawImage(stage.trailsCanvas, 0, 0);
+                    var sx = 0;
+                    var swidth = video.videoWidth;
                 }
-                context.drawImage(video, 0, 0, video.width * -1, video.height);
+
+                // Video height crop calculation
+                if( video.videoHeight > stage.dimensions.y ) {
+                    var sy = (video.videoHeight - stage.dimensions.y) /2;
+                    var sheight = stage.dimensions.y;
+                } else {
+                    var sy = 0;
+                    var sheight = video.videoHeight;
+                }
+
+                /*
+                    The first time we get here our last frame canvas background
+                    color will be pure white, we need to detect this situation
+                    and manually push a one frame update, otherwise we'll trigger
+                    a motion event.
+                */
+
+                var tmp_canvas    = document.createElement( 'canvas' );
+                var tmp_context   = tmp_canvas.getContext( '2d' );
+                tmp_canvas.width  = 1; // lazy people do a 1x1 check..
+                tmp_canvas.height = 1;
+                tmp_context.drawImage( stage.lastCameraCanvas, 0, 0, 1, 1 );
+
+                var tmp_result = tmp_context.getImageData( 0, 0, 1, 1 );
+                if( tmp_result[0] + tmp_result[1] + tmp_result[2] === 0 ) {
+                    stage.lastCameraCanvas.getContext( '2d' ).drawImage( video,
+                        0, 0, video.videoWidth, video.videoHeight,
+                        0, 0, canvas.width, canvas.height
+                    );
+                } else {
+                    stage.lastCameraCanvas.getContext( '2d' ).drawImage(
+                        stage.trailsCanvas, 0, 0
+                    );
+                }
+
+                // Update the stage.trailsCanvas with the latest frame from the webcam
+
+                context.drawImage( video,
+                    0, 0, video.videoWidth, video.videoHeight,
+                    0, 0, canvas.width, canvas.height
+                );
+
+                // TEST - BW filter
+                var bw_data = context.getImageData(
+                    0, 0, canvas.width, canvas.height
+                );
+                var pixels = bw_data.data;
+
+                for( var i = 0; i < pixels.length; i += 4 ) {
+                    /*
+                        getImageData returns RGB + alpha data for each pixel of the image,
+                        to convert this color information into a greyscale image we'll
+                        manipulate the RGB channels individually and ignore the alpha one.
+                        But we must understand how color is perceived by the human eye,
+                        green has more importance than red or blue colors so our luminance
+                        algorithm will use different weight ratios for each color channel.
+                    */
+                    var bw = (
+                        pixels[i +0] * 0.30 + // Red channel
+                        pixels[i +1] * 0.59 + // Green channel
+                        pixels[i +2] * 0.11   // Blue channel
+                        // alpha channel is kept as is
+                    );
+
+                    pixels[i +0] = pixels[i +1] = pixels[i +2] = bw;
+                }
+
+                context.putImageData( bw_data, 0, 0 );
+                // TEST - BW filter ------------------------------------------------------
+
                 stage.changed();
                 stage.streamingCamera = true;
+
             } catch (e) {
-                if (e.name !== 'NS_ERROR_NOT_AVAILABLE') {
-                    // https://bugzilla.mozilla.org/show_bug.cgi?id=879717
+                // https://bugzilla.mozilla.org/show_bug.cgi?id=879717
+                if( e.name !== 'NS_ERROR_NOT_AVAILABLE' ) {
                     throw e;
                 }
             }
         }
     }
-    this.pushContext('doYield');
+
+    this.pushContext( 'doYield' );
     this.pushContext();
 };
 
@@ -2916,6 +3005,7 @@ Process.prototype.doStopCamera = function () {
 };
 
 Process.prototype.getCameraMotionCanvas = function () {
+    /*
     // see https://www.adobe.com/devnet/html5/articles/javascript-motion-detection.html
     fastAbs = function (value) // faster, but less acurate
     { return (value ^ (value >> 31)) - (value >> 31); };
@@ -2958,6 +3048,8 @@ Process.prototype.getCameraMotionCanvas = function () {
     diff(blendedData.data, sourceData.data, lastImageData.data);
     blendedCanvas.getContext('2d').putImageData(blendedData, 0, 0);
     return blendedCanvas;
+    */
+    console.log( 'getCameraMotionCanvas()' );
 };
 
 Process.prototype.getCameraMotion = function (motionCanvas, thisObj) {
@@ -3068,7 +3160,7 @@ Process.prototype.doVideoPlay = function() {
             newCanvas( stage.dimensions ),
             sprite.newCostumeName( 'video' ),
             new Point(
-                parseInt( stage.dimensions.x /2 ),
+                parseInt( stage.dimensions.x  /2 ),
                 parseInt( stage.dimensions.y /2 )
             )
         );
@@ -3092,18 +3184,18 @@ Process.prototype.doVideoPlay = function() {
 
         if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
             // Video width crop calculation
-            if( video.videoWidth > stage.image.width ) {
-                var sx = (video.videoWidth - stage.image.width) /2;
-                var swidth = stage.image.width;
+            if( video.videoWidth > stage.dimensions.x ) {
+                var sx = (video.videoWidth - stage.dimensions.x) /2;
+                var swidth = stage.dimensions.x;
             } else {
                 var sx = 0;
                 var swidth = video.videoWidth;
             }
 
             // Video height crop calculation
-            if( video.videoHeight > stage.image.height ) {
-                var sy = (video.videoHeight - stage.image.height) /2;
-                var sheight = stage.image.height;
+            if( video.videoHeight > stage.dimensions.y ) {
+                var sy = (video.videoHeight - stage.dimensions.y) /2;
+                var sheight = stage.dimensions.y;
             } else {
                 var sy = 0;
                 var sheight = video.videoHeight;
@@ -3254,13 +3346,14 @@ function Context(
     this.startTime = null;
     this.activeAudio = null;
     this.activeNote = null;
-    this.activeStream = null;
     this.isLambda = false; // marks the end of a lambda
     this.isImplicitLambda = false; // marks the end of a C-shaped slot
     this.isCustomBlock = false; // marks the end of a custom block's stack
     this.emptySlots = 0; // used for block reification
     this.tag = null;  // lexical catch-tag for custom blocks
-    this.videoStream = null;
+
+    this.webcamStream = null;
+    this.videoStream  = null;
 }
 
 Context.prototype.toString = function () {

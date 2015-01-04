@@ -4415,9 +4415,6 @@ StageMorph.prototype.init = function (globals) {
     this.paletteCache = {}; // not to be serialized (!)
     this.lastAnswer = ''; // last user input, do not persist
     this.activeSounds = []; // do not persist
-    this.streamingCamera = false;
-    this.lastCameraCanvas = null;
-    this.lastCameraMotion = new Point(0, 0);
 
     this.trailsCanvas = null;
     this.isThreadSafe = false;
@@ -4433,6 +4430,10 @@ StageMorph.prototype.init = function (globals) {
                             'duplicate': 0,
                             'confetti': 0
                         };
+
+    this.webcamStreaming  = false;
+    this.lastCameraCanvas = null;
+    this.lastCameraMotion = new Point( 0, 0 );
 
     StageMorph.uber.init.call(this);
 
