@@ -2983,16 +2983,34 @@ Process.prototype.doStreamCamera = function () {
                 }
 
                 // Update the stage.trailsCanvas with the latest frame from the webcam
-
                 context.drawImage( video,
                     0, 0, video.videoWidth, video.videoHeight,
                     0, 0, canvas.width, canvas.height
                 );
 
-                // TEST - BW filter
-                this.convertToGrayScale( canvas, context );
 
-                // TEST - BW filter ------------------------------------------------------
+                /* --------------------------------------------------------
+                    THIS IS A FILTER TESTING SECTION FOR DEBUGGING
+                    #TEST #DEBUG #DELETEME
+                   -------------------------------------------------------- */
+
+                if( false ) {
+                    // Apply a BW filter to the current canvas permanently.
+                    this.applyFilterBW( canvas, context );
+                };
+
+                if( false ) {
+                    var test = this.duplicateAndApplyFilterBW( canvas );
+
+                    if( false ) { // activate this to replace the stage canvas
+                        context.drawImage( test,
+                            0, 0, test.width, test.height,
+                            0, 0, canvas.width, canvas.height
+                        );
+                    };
+                };
+
+                // END OF SECTION -----------------------------------------
 
                 stage.changed();
                 stage.streamingCamera = true;
@@ -3039,7 +3057,8 @@ Process.prototype.doStopCamera = function () {
     }
 };
 
-Process.prototype.convertToGrayScale = function( canvas, context ) {
+Process.prototype.applyFilterBW = function( canvas ) {
+    var context = canvas.getContext( '2d' );
     var bw_data = context.getImageData(
         0, 0, canvas.width, canvas.height
     );
@@ -3065,6 +3084,24 @@ Process.prototype.convertToGrayScale = function( canvas, context ) {
     }
 
     context.putImageData( bw_data, 0, 0 );
+};
+
+Process.prototype.duplicateAndApplyFilterBW = function( src_canvas ) {
+    // This function simplifies the creation of a new canvas and duplicating
+    // the src_canvas to the new one.
+
+    var new_canvas  = newCanvas( new Point(
+        src_canvas.width,
+        src_canvas.height
+    ));
+
+    var context = new_canvas.getContext( '2d' );
+    context.drawImage( src_canvas, 0, 0 );
+
+    // BW filter execution.
+    this.applyFilterBW( new_canvas );
+
+    return new_canvas;
 };
 
 Process.prototype.getCameraMotionCanvas = function () {
