@@ -2888,9 +2888,6 @@ Process.prototype.doStreamCamera = function () {
             video.play();
         };
 
-        this.context.webcamStream = video;
-        stage.lastCameraCanvas    = newCanvas( stage.dimensions );
-
         // Cross browser support
         navigator.getUserMedia = (
             navigator.getUserMedia ||
@@ -2928,6 +2925,9 @@ Process.prototype.doStreamCamera = function () {
         } else {
             throw new Error( 'getUserMedia not supported by this browser.' );
         }
+
+        this.context.webcamStream = video;
+        stage.lastCameraCanvas    = newCanvas( stage.dimensions );
 
     } else {
         var canvas  = stage.trailsCanvas;
@@ -2990,31 +2990,8 @@ Process.prototype.doStreamCamera = function () {
                 );
 
                 // TEST - BW filter
-                var bw_data = context.getImageData(
-                    0, 0, canvas.width, canvas.height
-                );
-                var pixels = bw_data.data;
+                this.convertToGrayScale( canvas, context );
 
-                for( var i = 0; i < pixels.length; i += 4 ) {
-                    /*
-                        getImageData returns RGB + alpha data for each pixel of the image,
-                        to convert this color information into a greyscale image we'll
-                        manipulate the RGB channels individually and ignore the alpha one.
-                        But we must understand how color is perceived by the human eye,
-                        green has more importance than red or blue colors so our luminance
-                        algorithm will use different weight ratios for each color channel.
-                    */
-                    var bw = (
-                        pixels[i +0] * 0.30 + // Red channel
-                        pixels[i +1] * 0.59 + // Green channel
-                        pixels[i +2] * 0.11   // Blue channel
-                        // alpha channel is kept as is
-                    );
-
-                    pixels[i +0] = pixels[i +1] = pixels[i +2] = bw;
-                }
-
-                context.putImageData( bw_data, 0, 0 );
                 // TEST - BW filter ------------------------------------------------------
 
                 stage.changed();
@@ -3034,17 +3011,60 @@ Process.prototype.doStreamCamera = function () {
 };
 
 Process.prototype.doStopCamera = function () {
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (stage) {
-        stage.streamingCamera = false;
-        stage.threads.processes.forEach(function (thread) {
-            if (thread.context) {
-                if (thread.context.activeStream) {
-                    thread.popContext();
+    /*
+        This function is still buggy, I'm not able to fully release the
+        hardware, so the webcam light will be lit even after stopping
+        the stream.
+
+        #TODO
+    */
+    var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
+
+    if( stage ) {
+        stage.threads.processes.forEach( function( thread ) {
+            if( thread.context.webcamStream ) {
+                if (navigator.mozGetUserMedia) {
+                    console.log(1);
+                    thread.context.webcamStream.mozSrcObject.stop();
+                } else {
+                    console.log(2);
+                    thread.context.webcamStream.pause();
                 }
+
+                thread.context.webcamStream.src = null;
+                stage.streamingCamera = false;
+                thread.popContext();
             }
         });
     }
+};
+
+Process.prototype.convertToGrayScale = function( canvas, context ) {
+    var bw_data = context.getImageData(
+        0, 0, canvas.width, canvas.height
+    );
+    var pixels = bw_data.data;
+
+    for( var i = 0; i < pixels.length; i += 4 ) {
+        /*
+            getImageData returns RGB + alpha data for each pixel of the image,
+            to convert this color information into a greyscale image we'll
+            manipulate the RGB channels individually and ignore the alpha one.
+            But we must understand how color is perceived by the human eye,
+            green has more importance than red or blue colors so our luminance
+            algorithm will use different weight ratios for each color channel.
+        */
+        var bw = (
+            pixels[i +0] * 0.30 + // Red channel
+            pixels[i +1] * 0.59 + // Green channel
+            pixels[i +2] * 0.11   // Blue channel
+            // alpha channel is kept as is
+        );
+
+        pixels[i +0] = pixels[i +1] = pixels[i +2] = bw;
+    }
+
+    context.putImageData( bw_data, 0, 0 );
 };
 
 Process.prototype.getCameraMotionCanvas = function () {
@@ -3317,7 +3337,7 @@ Process.prototype.doStopRigidBodySimulation = function() {
             stage.rigidBodySolver.stop();
             delete stage["rigidBodySolver"];
         }
-        
+
         stage.children.forEach(function(morph) {
             if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
                 morph.rigidBody.reset();
