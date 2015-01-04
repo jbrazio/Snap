@@ -611,6 +611,16 @@ SpriteMorph.prototype.initBlocks = function () {
             category: 'control',
             spec: 'broadcast %msg and wait'
         },
+        doMessageTo: {
+            type: 'command',
+            category: 'control',
+            spec: 'message %msg to %col'
+        },
+        doMessageToAndWait: {
+            type: 'command',
+            category: 'control',
+            spec: 'message %msg to %col and wait'
+        },
         getLastMessage: {
             type: 'reporter',
             category: 'control',
@@ -1236,13 +1246,23 @@ SpriteMorph.prototype.initBlocks = function () {
         enableRigidBody: {
             type: 'command',
             category: 'sensing',
-            spec: 'enable rigid body with mass %n'
+            spec: 'enable rigid body with mass %n and restitution %n'
 
         },
         disableRigidBody: {
             type: 'command',
             category: 'sensing',
             spec: 'disable rigid body behaviour'
+        },
+        enableSpringTo: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'enable spring to %col with stiffness %n and length %n'
+        },
+        disableSpringTo: {
+            type: 'command',
+            category: 'sensing',
+            spec: 'disable spring to %col'
         },
         doRigidBodySimulation: {
             type: 'command',
@@ -1328,8 +1348,10 @@ SpriteMorph.prototype.blockAlternatives = {
     // control:
     receiveGo: ['receiveClick'],
     receiveClick: ['receiveGo'],
-    doBroadcast: ['doBroadcastAndWait'],
-    doBroadcastAndWait: ['doBroadcast'],
+    doBroadcast: ['doBroadcastAndWait','doMessageTo','doMessageToAndWait'],
+    doBroadcastAndWait: ['doBroadcast','doMessageTo','doMessageToAndWait'],
+    doMessageTo: ['doMessageToAndWait', 'doBroadcast', 'doBroadcastAndWait'],
+    doMessageToAndWait: ['doMessageTo', 'doBroadcast', 'doBroadcastAndWait'],
     doIf: ['doIfElse', 'doUntil'],
     doIfElse: ['doIf', 'doUntil'],
     doRepeat: ['doUntil'],
@@ -1364,6 +1386,8 @@ SpriteMorph.prototype.blockAlternatives = {
     // Rigid Body -- experimental code
     enableRigidBody: ['disableRigidBody'],
     disableRigidBody: ['enableRigidBody'],
+    enableSpringTo: ['disableSpringTo'],
+    disableSpringTo: ['enableSpringTo'],
     doRigidBodySimulation: ['doStopRigidBodySimulation'],
     doStopRigidBodySimulation: ['doRigidBodySimulation']
 
@@ -1923,6 +1947,8 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push('-');
         blocks.push(block('doBroadcast'));
         blocks.push(block('doBroadcastAndWait'));
+        blocks.push(block('doMessageTo'));
+        blocks.push(block('doMessageToAndWait'));
         blocks.push(watcherToggle('getLastMessage'));
         blocks.push(block('getLastMessage'));
         blocks.push('-');
@@ -2011,6 +2037,8 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('reportRigidBodySimulation'));
         blocks.push(block('enableRigidBody'));
         blocks.push(block('disableRigidBody'));
+        blocks.push(block('enableSpringTo'));
+        blocks.push(block('disableSpringTo'));
 
     // for debugging: ///////////////
 
@@ -4315,18 +4343,47 @@ SpriteMorph.prototype.setVideoSource = function( url ) {
 
 // Rigid Body -- experimental code
 
-SpriteMorph.prototype.enableRigidBody = function(mass) {
+SpriteMorph.prototype.enableRigidBody = function(mass, restitution) {
     if (!this.rigidBody) {
-        this.rigidBody = new RigidBody(this, mass);
+        this.rigidBody = new RigidBody(this, mass, restitution);
+    } else {
+        this.rigidBody.m = mass;
+        this.rigidBody.e = restitution;
     }
 };
 
 SpriteMorph.prototype.disableRigidBody = function() {
     if (this.rigidBody instanceof RigidBody) {
         this.rigidBody.reset();
-        delete this['rigidBody'];
     }
 };
+
+SpriteMorph.prototype.enableSpringTo = function(name, stiffness, length) {
+    var p = new Process(),
+        morphs = p.getObjectsNamed(name, this, this.parentThatIsA(StageMorph)),
+        me = this;
+    morphs.forEach(function (other) {
+        if (me.rigidBody && me.rigidBody instanceof RigidBody) {
+            if (!other.rigidBody || !(other.rigidBody instanceof RigidBody)) {
+                other.rigidBody = new RigidBody(other, 0, 0);
+            }
+            me.rigidBody.addSpring(other.rigidBody, stiffness, length);
+        }
+    });
+}
+
+SpriteMorph.prototype.disableSpringTo = function(name) {
+    var p = new Process(),
+        morphs = p.getObjectsNamed(name, this, this.parentThatIsA(StageMorph))
+        me = this;
+    morphs.forEach(function (other) {
+        if (me.rigidBody && me.rigidBody instanceof RigidBody) {
+            if (other.rigidBody && other.rigidBody instanceof RigidBody) {
+                me.rigidBody.removeSpring(other.rigidBody);
+            }
+        }
+    });
+}
 
 SpriteMorph.prototype.reportRigidBodySimulation = function() {
     var stage;
@@ -5121,6 +5178,8 @@ StageMorph.prototype.blockTemplates = function (category) {
         blocks.push('-');
         blocks.push(block('doBroadcast'));
         blocks.push(block('doBroadcastAndWait'));
+        blocks.push(block('doMessageTo'));
+        blocks.push(block('doMessageToAndWait'));
         blocks.push(watcherToggle('getLastMessage'));
         blocks.push(block('getLastMessage'));
         blocks.push('-');

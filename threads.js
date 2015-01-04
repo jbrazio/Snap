@@ -1864,6 +1864,8 @@ Process.prototype.reportURL = function (url) {
 // Process event messages primitives
 
 Process.prototype.doBroadcast = function (message) {
+    return this.doMessageTo(message, '');
+    /*
     var stage = this.homeContext.receiver.parentThatIsA(StageMorph),
         hats = [],
         procs = [];
@@ -1880,9 +1882,12 @@ Process.prototype.doBroadcast = function (message) {
         });
     }
     return procs;
+    */
 };
 
 Process.prototype.doBroadcastAndWait = function (message) {
+    return this.doMessageToAndWait(message, '');
+    /*
     if (!this.context.activeSends) {
         this.context.activeSends = this.doBroadcast(message);
     }
@@ -1896,7 +1901,45 @@ Process.prototype.doBroadcastAndWait = function (message) {
     }
     this.pushContext('doYield');
     this.pushContext();
+    */
 };
+
+Process.prototype.doMessageTo = function (message, morphName) {
+    var stage = this.homeContext.receiver.parentThatIsA(StageMorph),
+        hats = [],
+        procs = [];
+        morphs = [];
+    if (message !== '') {
+        stage.lastMessage = message;
+        morphs = morphName != '' ? this.getObjectsNamed(morphName, this, stage) :
+                                    stage.children.concat(stage);
+        morphs.forEach(function (morph) {
+            if (morph instanceof SpriteMorph || morph instanceof StageMorph) {
+                hats = hats.concat(morph.allHatBlocksFor(message));
+            }
+        });
+        hats.forEach(function (block) {
+            procs.push(stage.threads.startProcess(block, stage.isThreadSafe));
+        });
+    }
+    return procs;
+}
+
+Process.prototype.doMessageToAndWait = function (message, morphName) {
+    if (!this.context.activeSends) {
+        this.context.activeSends = this.doMessageTo(message, morphName);
+    }
+    this.context.activeSends = this.context.activeSends.filter(
+        function (proc) {
+            return proc.isRunning();
+        }
+    );
+    if (this.context.activeSends.length === 0) {
+        return null;
+    }
+    this.pushContext('doYield');
+    this.pushContext();
+}
 
 Process.prototype.getLastMessage = function () {
     var stage;
@@ -3236,24 +3279,22 @@ Process.prototype.doVideoStop = function() {
 // Rigid Body solver primitives -- experimental code
 
 Process.prototype.doRigidBodySimulation = function() {
-    if ((Date.now() - this.context.startTime) < 20) {
-        this.pushContext("doYield");
-        this.pushContext();
-        return null;
-    }
-
     var stage;
     if (this.homeContext.receiver) {
         stage = this.homeContext.receiver.parentThatIsA(StageMorph);
         if (stage) {
 
-            if (!stage.rigidBodySolver) {
-                stage.rigidBodySolver = new RigidBodySolver();
-            }
             this.context.rigidBody = true;
 
+            if (!stage.rigidBodySolver) {
+                stage.rigidBodySolver = new RigidBodySolver(stage);
+                this.doBroadcastAndWait("RBSimStarted");
+                this.popContext();
+            }
+
             if (!stage.rigidBodySolver.isRunning) {
-                stage.rigidBodySolver.start();
+                this.doStopRigidBodySimulation();
+                return null;
             }
 
             this.pushContext("doYield");
@@ -3263,7 +3304,7 @@ Process.prototype.doRigidBodySimulation = function() {
                     arr.push(morph.rigidBody);
                 }
             });
-            stage.rigidBodySolver.Timestep(arr);
+            stage.rigidBodySolver.step(arr);
             this.pushContext();
         }
     }
@@ -3274,18 +3315,22 @@ Process.prototype.doStopRigidBodySimulation = function() {
     if( stage ) {
         if (stage.rigidBodySolver instanceof RigidBodySolver) {
             stage.rigidBodySolver.stop();
+            delete stage["rigidBodySolver"];
         }
+        
         stage.children.forEach(function(morph) {
             if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
                 morph.rigidBody.reset();
             }
         });
+
         stage.threads.processes.forEach(function(thread) {
             if (thread.context && thread.context.rigidBody) {
                 thread.popContext();
             }
         });
     }
+    this.doBroadcast("RBSimStopped");
     return null;
 }
 
