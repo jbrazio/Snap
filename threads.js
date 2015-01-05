@@ -3001,7 +3001,6 @@ Process.prototype.doStreamCamera = function () {
 
                 if( false ) {
                     var test = this.duplicateAndApplyFilterBW( canvas );
-
                     if( false ) { // activate this to replace the stage canvas
                         context.drawImage( test,
                             0, 0, test.width, test.height,
@@ -3010,6 +3009,87 @@ Process.prototype.doStreamCamera = function () {
                     };
                 };
 
+                // END OF SECTION -----------------------------------------
+
+                /* --------------------------------------------------------
+                    MOVEMENT DETECTION TESTING SECTION
+                    #TEST #DEBUG #DELETEME
+                   -------------------------------------------------------- */
+                try {
+                    /*
+                     * For now we lock the actor detection to the first actor found on stage
+                     * This should support multiple actors as focus points for the motion
+                     *  detection algorithm.
+                     */
+                    var sprite = null;
+                    stage.children.concat( stage ).forEach( function (morph) {
+                        if( morph instanceof SpriteMorph ) {
+                            sprite = morph;
+                            return;
+                        }
+                    });
+
+                    /*
+                     * This creates a bounding box around the sprite so we can speed
+                     * up the motion detection algorith by restrinting the search area
+                     * to this bounding box.
+                     */
+                    var bounding_box = 64;  // px
+
+                    var a = new Point(
+                        parseInt((sprite.xPosition() + (stage.dimensions.x /2)) - bounding_box),
+                        parseInt(((stage.dimensions.y /2) - sprite.yPosition()) - bounding_box)
+                    );
+
+                    var b = new Point(
+                        parseInt((sprite.xPosition() + (stage.dimensions.x /2)) + bounding_box),
+                        parseInt(((stage.dimensions.y /2) - sprite.yPosition()) + bounding_box)
+                    );
+
+                    var img_data = context.getImageData(
+                        0, 0, canvas.width, canvas.height
+                    );
+                    var pixels = img_data.data;
+
+                    for( var xx = 0; xx < ((b.x - a.x) / 8); xx++ ) {
+                        for( var yy = 0; yy < ((b.y - a.y) / 8); yy++ ) {
+                            var sum = 0;
+
+                            for( var x = 0; x < 8; x++ ) {
+                                for( var y = 0; y < 8; y++ ) {
+                                    var offset = (
+                                        ((((a.x * 4) + (x * 4))) + // offset x
+                                            ((xx * 4) * 8)) +
+
+                                        ((((canvas.width * 4) * a.y) + ((canvas.width * 4) * y)) + // offset y
+                                            (((canvas.width * 4) * 8) * yy))
+                                    );
+
+                                    pixels[offset +0] = 255;
+                                    pixels[offset +1] = 0;
+                                    pixels[offset +2] = 0;
+
+                                    sum += (
+                                        pixels[offset +0] +
+                                        pixels[offset +1] +
+                                        pixels[offset +2]
+                                    );
+
+                                    //console.log( 'offset: ' + offset );
+                                }
+                            }
+                        }
+                    }
+
+                    context.putImageData( img_data, 0, 0 );
+
+                } catch( e ) {
+                    /*
+                     * If we do not catch errors, when the sprite is dragged
+                     * it will generate a null exception when trying to get
+                     * the xPosition() or yPosition().
+                     */
+                }
                 // END OF SECTION -----------------------------------------
 
                 stage.changed();
