@@ -572,12 +572,12 @@ SpriteMorph.prototype.initBlocks = function () {
         doStreamCamera: {
             type: 'command',
             category: 'pen',
-            spec: 'start streaming from the camera'
+            spec: 'start the webcam'
         },
         doStopCamera: {
             type: 'command',
             category: 'pen',
-            spec: 'stop streaming from the camera'
+            spec: 'stop the webcam'
         },
 
         // Control
@@ -2031,6 +2031,7 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+        blocks.push('-');
 
     // Rigid Body -- experimental code
 
@@ -5252,6 +5253,7 @@ StageMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+        blocks.push('-');
 
     // Rigid Body -- experimental code
 

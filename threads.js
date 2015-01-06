@@ -3096,16 +3096,17 @@ Process.prototype.duplicateAndApplyFilterBW = function( src_canvas ) {
 };
 
 Process.prototype.getCameraMotionCanvas = function () {
-    fastAbs = function (value) // faster, but less acurate
+    fastAbs = function( value ) // faster, but less acurate
     { return (value ^ (value >> 31)) - (value >> 31); };
 
-    threshold = function (value)
+    threshold = function( value )
     { return (value > 0x15) ? 0xff : 0x00; };
 
     var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
 
     if( !stage.trailsCanvas || !stage.lastCameraCanvas ) {
         console.log( 'getCameraMotionCanvas: empty stage.trailsCanvas || stage.lastCameraCanvas' );
+        return null;
     }
 
     // Current frame
@@ -3127,9 +3128,9 @@ Process.prototype.getCameraMotionCanvas = function () {
     var context_new = canvas_new.getContext( '2d' );
     var imgdata_new = context_new.createImageData( canvas_new.width, canvas_new.height );
 
-
-    //context_previous.translate( canvas_previous.width, 0 );
-    //context_previous.scale( -1, 1 );
+    // Rotate the output canvas
+    context_new.translate( canvas_new.width, 0 );
+    context_new.scale( -1, 1 );
 
     if( imgdata_current.length != imgdata_prv.length ) {
         console.log( 'getCameraMotionCanvas: imgdata_current.length != imgdata_prv.length' );
