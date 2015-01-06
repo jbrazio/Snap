@@ -2518,13 +2518,13 @@ Process.prototype.reportColorIsTouchingColor = function (color1, color2) {
     return false;
 };
 
-Process.prototype.reportStreamingCamera = function () {
+Process.prototype.reportWebcamStreaming = function () {
     var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    return stage.streamingCamera;
+    return stage.webcamStreaming;
 };
 
 Process.prototype.reportCameraMotion = function () {
-    if( this.reportStreamingCamera() ) {
+    if( this.reportWebcamStreaming() ) {
         var thisObj = this.blockReceiver();
         var motionCanvas = this.getCameraMotionCanvas();
 
@@ -2540,7 +2540,7 @@ Process.prototype.reportCameraMotion = function () {
 };
 
 Process.prototype.reportCameraDirection = function () {
-    if (this.reportStreamingCamera()) {
+    if (this.reportWebcamStreaming()) {
         var thisObj = this.blockReceiver();
         var motionCanvas = this.getCameraMotionCanvas();
         var motion = this.getCameraMotion(motionCanvas, thisObj);
@@ -2869,6 +2869,7 @@ Process.prototype.doStreamCamera = function () {
         return;
     }
 
+    var me     = this;
     var video  = this.context.webcamStream || null;
     var stage  = this.homeContext.receiver.parentThatIsA( StageMorph ) || null;
 
@@ -2876,7 +2877,11 @@ Process.prototype.doStreamCamera = function () {
         stage.trailsCanvas = newCanvas( stage.dimensions );
     }
 
-    stage.webcamStreaming  = false;
+    if( ! stage.lastCameraCanvas ) {
+        stage.lastCameraCanvas = newCanvas( stage.dimensions );
+    }
+
+    stage.webcamStreaming = false;
 
     if( ! video ) {
         // Video object that will allow us to connect to the webcam
@@ -2903,19 +2908,25 @@ Process.prototype.doStreamCamera = function () {
                     'audio': false
                 },
 
-                function (localMediaStream) {
+                function ( localMediaStream ) {
                     /*
                         Firefox Nightly right now needs you to set the mozSrcObject property of the
                         video element in order to play it; for other browsers, set the src attribute.
                         Whilst Firefox can use the stream directly, Webkit and Opera need to create
                         an object URL from it. This all will become standardized in the near future.
                     */
-                    if (navigator.mozGetUserMedia) {
+                    if( navigator.mozGetUserMedia ) {
                         video.mozSrcObject = localMediaStream;
                     } else {
                         var vendorURL = window.URL || window.webkitURL;
                         video.src = vendorURL.createObjectURL( localMediaStream );
                     }
+
+                    /*
+                     * Keep a reference to the localMediaStream object, otherwise it's impossible to
+                     * stop the webcam and free the hardware completely.
+                     */
+                    me.context.localMediaStream = localMediaStream;
                 },
 
                 function (err) {
@@ -2926,63 +2937,55 @@ Process.prototype.doStreamCamera = function () {
             throw new Error( 'getUserMedia not supported by this browser.' );
         }
 
+        // Keep a reference to the video object
         this.context.webcamStream = video;
-        stage.lastCameraCanvas    = newCanvas( stage.dimensions );
+
+        // Mirror the webcam image to be more "natural" to the interacting user
+        stage.trailsCanvas.getContext( '2d' ).translate( stage.trailsCanvas.width, 0 );
+        stage.trailsCanvas.getContext( '2d' ).scale( -1, 1 );
 
     } else {
         var canvas  = stage.trailsCanvas;
         var context = canvas.getContext( '2d' );
 
-        // Mirror webcam image
-        context.translate( context.width, 0 );
-        context.scale( -1, 1 );
-
         if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
             try {
-                // Video width crop calculation
-                if( video.videoWidth > stage.dimensions.x ) {
-                    var sx = (video.videoWidth - stage.dimensions.x) /2;
-                    var swidth = stage.dimensions.x;
-                } else {
-                    var sx = 0;
-                    var swidth = video.videoWidth;
-                }
-
-                // Video height crop calculation
-                if( video.videoHeight > stage.dimensions.y ) {
-                    var sy = (video.videoHeight - stage.dimensions.y) /2;
-                    var sheight = stage.dimensions.y;
-                } else {
-                    var sy = 0;
-                    var sheight = video.videoHeight;
-                }
-
                 /*
                     The first time we get here our last frame canvas background
                     color will be pure white, we need to detect this situation
                     and manually push a one frame update, otherwise we'll trigger
                     a motion event.
                 */
+                var canvas_previous  = stage.lastCameraCanvas;
+                var context_previous = canvas_previous.getContext( '2d' );
 
-                var tmp_canvas    = document.createElement( 'canvas' );
-                var tmp_context   = tmp_canvas.getContext( '2d' );
-                tmp_canvas.width  = 1; // lazy people do a 1x1 check..
-                tmp_canvas.height = 1;
-                tmp_context.drawImage( stage.lastCameraCanvas, 0, 0, 1, 1 );
+                var canvas_tmp  = document.createElement( 'canvas' );
+                var context_tmp = canvas_tmp.getContext( '2d' );
 
-                var tmp_result = tmp_context.getImageData( 0, 0, 1, 1 );
-                if( tmp_result[0] + tmp_result[1] + tmp_result[2] === 0 ) {
-                    stage.lastCameraCanvas.getContext( '2d' ).drawImage( video,
+                canvas_tmp.width  = 1;
+                canvas_tmp.height = 1;
+
+                context_tmp.drawImage( canvas_previous,
+                    0, 0, canvas_tmp.width, canvas_tmp.height
+                );
+
+                var imgdata_tmp = context_tmp.getImageData(
+                    0, 0, canvas_tmp.width, canvas_tmp.height
+                );
+
+                if( imgdata_tmp.data[0] + imgdata_tmp.data[1] + imgdata_tmp.data[2] === 0 ) {
+                    context_previous.drawImage( video,
                         0, 0, video.videoWidth, video.videoHeight,
-                        0, 0, canvas.width, canvas.height
+                        0, 0, canvas_previous.width, canvas_previous.height
                     );
                 } else {
-                    stage.lastCameraCanvas.getContext( '2d' ).drawImage(
-                        stage.trailsCanvas, 0, 0
+                    context_previous.drawImage( canvas,
+                        0, 0, canvas.width, canvas.height,
+                        0, 0, canvas_previous.width, canvas_previous.height
                     );
                 }
 
-                // Update the stage.trailsCanvas with the latest frame from the webcam
+                // Update the stage's trailsCanvas with the latest frame from the webcam
                 context.drawImage( video,
                     0, 0, video.videoWidth, video.videoHeight,
                     0, 0, canvas.width, canvas.height
@@ -2990,110 +2993,20 @@ Process.prototype.doStreamCamera = function () {
 
 
                 /* --------------------------------------------------------
-                    THIS IS A FILTER TESTING SECTION FOR DEBUGGING
+                    MOTION DETECTION TESTING SECTION
                     #TEST #DEBUG #DELETEME
                    -------------------------------------------------------- */
-
-                if( false ) {
-                    // Apply a BW filter to the current canvas permanently.
-                    this.applyFilterBW( canvas, context );
+                if( true ) {
+                    var test = this.getCameraMotionCanvas();
+                    context.drawImage( test,
+                        0, 0, test.width, test.height,
+                        360, 270, 120, 90
+                    );
                 };
-
-                if( false ) {
-                    var test = this.duplicateAndApplyFilterBW( canvas );
-                    if( false ) { // activate this to replace the stage canvas
-                        context.drawImage( test,
-                            0, 0, test.width, test.height,
-                            0, 0, canvas.width, canvas.height
-                        );
-                    };
-                };
-
-                // END OF SECTION -----------------------------------------
-
-                /* --------------------------------------------------------
-                    MOVEMENT DETECTION TESTING SECTION
-                    #TEST #DEBUG #DELETEME
-                   -------------------------------------------------------- */
-                try {
-                    /*
-                     * For now we lock the actor detection to the first actor found on stage
-                     * This should support multiple actors as focus points for the motion
-                     *  detection algorithm.
-                     */
-                    var sprite = null;
-                    stage.children.concat( stage ).forEach( function (morph) {
-                        if( morph instanceof SpriteMorph ) {
-                            sprite = morph;
-                            return;
-                        }
-                    });
-
-                    /*
-                     * This creates a bounding box around the sprite so we can speed
-                     * up the motion detection algorith by restrinting the search area
-                     * to this bounding box.
-                     */
-                    var bounding_box = 64;  // px
-
-                    var a = new Point(
-                        parseInt((sprite.xPosition() + (stage.dimensions.x /2)) - bounding_box),
-                        parseInt(((stage.dimensions.y /2) - sprite.yPosition()) - bounding_box)
-                    );
-
-                    var b = new Point(
-                        parseInt((sprite.xPosition() + (stage.dimensions.x /2)) + bounding_box),
-                        parseInt(((stage.dimensions.y /2) - sprite.yPosition()) + bounding_box)
-                    );
-
-                    var img_data = context.getImageData(
-                        0, 0, canvas.width, canvas.height
-                    );
-                    var pixels = img_data.data;
-
-                    for( var xx = 0; xx < ((b.x - a.x) / 8); xx++ ) {
-                        for( var yy = 0; yy < ((b.y - a.y) / 8); yy++ ) {
-                            var sum = 0;
-
-                            for( var x = 0; x < 8; x++ ) {
-                                for( var y = 0; y < 8; y++ ) {
-                                    var offset = (
-                                        ((((a.x * 4) + (x * 4))) + // offset x
-                                            ((xx * 4) * 8)) +
-
-                                        ((((canvas.width * 4) * a.y) + ((canvas.width * 4) * y)) + // offset y
-                                            (((canvas.width * 4) * 8) * yy))
-                                    );
-
-                                    pixels[offset +0] = 255;
-                                    pixels[offset +1] = 0;
-                                    pixels[offset +2] = 0;
-
-                                    sum += (
-                                        pixels[offset +0] +
-                                        pixels[offset +1] +
-                                        pixels[offset +2]
-                                    );
-
-                                    //console.log( 'offset: ' + offset );
-                                }
-                            }
-                        }
-                    }
-
-                    context.putImageData( img_data, 0, 0 );
-
-                } catch( e ) {
-                    /*
-                     * If we do not catch errors, when the sprite is dragged
-                     * it will generate a null exception when trying to get
-                     * the xPosition() or yPosition().
-                     */
-                }
                 // END OF SECTION -----------------------------------------
 
                 stage.changed();
-                stage.streamingCamera = true;
+                stage.webcamStreaming = true;
 
             } catch (e) {
                 // https://bugzilla.mozilla.org/show_bug.cgi?id=879717
@@ -3109,28 +3022,26 @@ Process.prototype.doStreamCamera = function () {
 };
 
 Process.prototype.doStopCamera = function () {
-    /*
-        This function is still buggy, I'm not able to fully release the
-        hardware, so the webcam light will be lit even after stopping
-        the stream.
-
-        #TODO
-    */
     var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
-
     if( stage ) {
         stage.threads.processes.forEach( function( thread ) {
             if( thread.context.webcamStream ) {
-                if (navigator.mozGetUserMedia) {
-                    console.log(1);
-                    thread.context.webcamStream.mozSrcObject.stop();
-                } else {
-                    console.log(2);
+                if( navigator.mozGetUserMedia ) {
+                    // #TODO Fully test this code under Firefox
                     thread.context.webcamStream.pause();
+                    thread.context.webcamStream.mozSrcObject.stop();
+                    thread.context.webcamStream.src = null;
+                } else {
+                    thread.context.webcamStream.pause();
+                    thread.context.localMediaStream.stop();
+                    thread.context.webcamStream.src = '';
                 }
 
-                thread.context.webcamStream.src = null;
-                stage.streamingCamera = false;
+                stage.lastCameraCanvas = null;
+                stage.webcamStreaming  = false;
+                stage.trailsCanvas     = newCanvas( stage.dimensions );
+
+                stage.changed();
                 thread.popContext();
             }
         });
@@ -3146,13 +3057,13 @@ Process.prototype.applyFilterBW = function( canvas ) {
 
     for( var i = 0; i < pixels.length; i += 4 ) {
         /*
-            getImageData returns RGB + alpha data for each pixel of the image,
-            to convert this color information into a greyscale image we'll
-            manipulate the RGB channels individually and ignore the alpha one.
-            But we must understand how color is perceived by the human eye,
-            green has more importance than red or blue colors so our luminance
-            algorithm will use different weight ratios for each color channel.
-        */
+         * getImageData returns RGB + alpha data for each pixel of the image,
+         * to convert this color information into a greyscale image we'll
+         * manipulate the RGB channels individually and ignore the alpha one.
+         * But we must understand how color is perceived by the human eye,
+         * green has more importance than red or blue colors so our luminance
+         * algorithm will use different weight ratios for each color channel.
+         */
         var bw = (
             pixels[i +0] * 0.30 + // Red channel
             pixels[i +1] * 0.59 + // Green channel
@@ -3185,51 +3096,69 @@ Process.prototype.duplicateAndApplyFilterBW = function( src_canvas ) {
 };
 
 Process.prototype.getCameraMotionCanvas = function () {
-    /*
-    // see https://www.adobe.com/devnet/html5/articles/javascript-motion-detection.html
     fastAbs = function (value) // faster, but less acurate
     { return (value ^ (value >> 31)) - (value >> 31); };
 
     threshold = function (value)
-    { return (value > 0x15) ? 0xFF : 0; };
+    { return (value > 0x15) ? 0xff : 0x00; };
 
-    diff = function (target, data1, data2) {
-        if (data1.length != data2.length) return null;
-        var i = 0;
-        while (i < (data1.length * 0.25)) {
-            var average1 = (data1[4*i] + data1[4*i+1] + data1[4*i+2]) / 3;
-            var average2 = (data2[4*i] + data2[4*i+1] + data2[4*i+2]) / 3;
-            var diff = threshold(fastAbs(average1 - average2));
-            target[4*i] = diff;
-            target[4*i+1] = diff;
-            target[4*i+2] = diff;
-            target[4*i+3] = 0xFF;
-            ++i;
-        }
-    };
+    var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
 
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (!stage.trailsCanvas || !stage.lastCameraCanvas) {
-        var canv = newCanvas(stage.dimensions);
-        var ctx = canv.getContext('2d');
-        ctx.fill();
-        return canv;
+    if( !stage.trailsCanvas || !stage.lastCameraCanvas ) {
+        console.log( 'getCameraMotionCanvas: empty stage.trailsCanvas || stage.lastCameraCanvas' );
     }
 
-    var canvasSource = stage.trailsCanvas;
-    var contextSource = canvasSource.getContext('2d');
-    var width = canvasSource.width,
-        height = canvasSource.height;
-    var sourceData = contextSource.getImageData(0, 0, width, height);
-    var lastImageData =
-        stage.lastCameraCanvas.getContext('2d').getImageData(0, 0, width, height);
-    var blendedData = contextSource.createImageData(width, height);
-    var blendedCanvas = newCanvas(stage.dimensions);
-    diff(blendedData.data, sourceData.data, lastImageData.data);
-    blendedCanvas.getContext('2d').putImageData(blendedData, 0, 0);
-    return blendedCanvas;
-    */
-    console.log( 'getCameraMotionCanvas()' );
+    // Current frame
+    var canvas_current  = this.duplicateAndApplyFilterBW( stage.trailsCanvas );
+    var context_current = canvas_current.getContext( '2d' );
+    var imgdata_current = context_current.getImageData(
+        0, 0, canvas_current.width, canvas_current.height
+    );
+
+    // Previous frame
+    var canvas_previous  = this.duplicateAndApplyFilterBW( stage.lastCameraCanvas );
+    var context_previous = canvas_previous.getContext( '2d' );
+    var imgdata_prv = context_previous.getImageData(
+        0, 0, canvas_previous.width, canvas_previous.height
+    );
+
+    // New motion frame
+    var canvas_new  = newCanvas( new Point(canvas_current.width, canvas_current.height) );
+    var context_new = canvas_new.getContext( '2d' );
+    var imgdata_new = context_new.createImageData( canvas_new.width, canvas_new.height );
+
+
+    //context_previous.translate( canvas_previous.width, 0 );
+    //context_previous.scale( -1, 1 );
+
+    if( imgdata_current.length != imgdata_prv.length ) {
+        console.log( 'getCameraMotionCanvas: imgdata_current.length != imgdata_prv.length' );
+        return null;
+    }
+
+    for( var i = 0; i < imgdata_current.data.length; i += 4 ) {
+        var avg_act = (
+            imgdata_current.data[i +0] +
+            imgdata_current.data[i +1] +
+            imgdata_current.data[i +2]
+        ) /3;
+
+        var avg_prv = (
+            imgdata_prv.data[i +0] +
+            imgdata_prv.data[i +1] +
+            imgdata_prv.data[i +2]
+        ) /3;
+
+        var diff = threshold( fastAbs(avg_prv - avg_act) );
+
+        imgdata_new.data[i +0] = diff;
+        imgdata_new.data[i +1] = diff;
+        imgdata_new.data[i +2] = diff;
+        imgdata_new.data[i +3] = 0xff;
+    }
+
+    context_new.putImageData( imgdata_new, 0, 0 );
+    return canvas_new;
 };
 
 Process.prototype.getCameraMotion = function (motionCanvas, thisObj) {
@@ -3534,7 +3463,9 @@ function Context(
     this.emptySlots = 0; // used for block reification
     this.tag = null;  // lexical catch-tag for custom blocks
 
-    this.webcamStream = null;
+    this.webcamStream     = null;
+    this.localMediaStream = null;
+
     this.videoStream  = null;
 }
 

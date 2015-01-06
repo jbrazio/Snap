@@ -807,7 +807,7 @@ SpriteMorph.prototype.initBlocks = function () {
             category: 'sensing',
             spec: 'camera motion direction'
         },
-        reportStreamingCamera: {
+        reportWebcamStreaming: {
             type: 'predicate',
             category: 'sensing',
             spec: 'streaming from the camera?'
@@ -2003,7 +2003,7 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push('-');
         blocks.push(block('reportCameraMotion'));
         blocks.push(block('reportCameraDirection'));
-        blocks.push(block('reportStreamingCamera'));
+        blocks.push(block('reportWebcamStreaming'));
         blocks.push('-');
         blocks.push(block('doAsk'));
         blocks.push(watcherToggle('getLastAnswer'));
@@ -5226,7 +5226,7 @@ StageMorph.prototype.blockTemplates = function (category) {
 
     } else if (cat === 'sensing') {
 
-        blocks.push(block('reportStreamingCamera'));
+        blocks.push(block('reportWebcamStreaming'));
         blocks.push('-');
         blocks.push(block('doAsk'));
         blocks.push(watcherToggle('getLastAnswer'));
