@@ -2532,7 +2532,7 @@ Process.prototype.reportCameraMotion = function () {
         var motion = this.getCameraMotion( motionCanvas, thisObj );
 
 
-        if( motion > 10 ) {
+        if( motion > 30 ) {
             return true;
         }
     }
@@ -3110,14 +3110,14 @@ Process.prototype.getCameraMotionCanvas = function () {
     }
 
     // Current frame
-    var canvas_current  = this.duplicateAndApplyFilterBW( stage.trailsCanvas );
+    var canvas_current  = stage.trailsCanvas; //this.duplicateAndApplyFilterBW( stage.trailsCanvas );
     var context_current = canvas_current.getContext( '2d' );
     var imgdata_current = context_current.getImageData(
         0, 0, canvas_current.width, canvas_current.height
     );
 
     // Previous frame
-    var canvas_previous  = this.duplicateAndApplyFilterBW( stage.lastCameraCanvas );
+    var canvas_previous  = stage.lastCameraCanvas; //this.duplicateAndApplyFilterBW( stage.lastCameraCanvas );
     var context_previous = canvas_previous.getContext( '2d' );
     var imgdata_prv = context_previous.getImageData(
         0, 0, canvas_previous.width, canvas_previous.height
