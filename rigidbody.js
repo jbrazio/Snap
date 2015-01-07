@@ -205,29 +205,6 @@ RigidBody.prototype.collisionData = function (other) {
     return this._collisionData(other);
 }
 
-RigidBody.prototype.overlappingImage = function (other, method) {
-    var fb = this.morph.fullBounds(),
-        otherFb = other.morph.fullBounds(),
-        oRect = fb.intersect(otherFb),
-        oImg = newCanvas(oRect.extent()),
-        ctx = oImg.getContext('2d');
-    if (oRect.width() < 1 || oRect.height() < 1) {
-        return newCanvas(new Point(1, 1));
-    }
-    ctx.drawImage(
-        this.morph.fullImage(),
-        oRect.origin.x - fb.origin.x,
-        oRect.origin.y - fb.origin.y
-    );
-    ctx.globalCompositeOperation = method;
-    ctx.drawImage(
-        other.morph.fullImage(),
-        otherFb.origin.x - oRect.origin.x,
-        otherFb.origin.y - oRect.origin.y
-    );
-    return oImg;
-};
-
 RigidBody.prototype._collisionData = function (other) {
     var oRect = this.morph.bounds.intersect(other.morph.bounds),
         oImg = this.morph.overlappingImage(other.morph),
