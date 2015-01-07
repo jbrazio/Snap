@@ -572,12 +572,12 @@ SpriteMorph.prototype.initBlocks = function () {
         doStreamCamera: {
             type: 'command',
             category: 'pen',
-            spec: 'start streaming from the camera'
+            spec: 'start the webcam'
         },
         doStopCamera: {
             type: 'command',
             category: 'pen',
-            spec: 'stop streaming from the camera'
+            spec: 'stop the webcam'
         },
 
         // Control
@@ -807,7 +807,7 @@ SpriteMorph.prototype.initBlocks = function () {
             category: 'sensing',
             spec: 'camera motion direction'
         },
-        reportStreamingCamera: {
+        reportWebcamStreaming: {
             type: 'predicate',
             category: 'sensing',
             spec: 'streaming from the camera?'
@@ -2003,7 +2003,7 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push('-');
         blocks.push(block('reportCameraMotion'));
         blocks.push(block('reportCameraDirection'));
-        blocks.push(block('reportStreamingCamera'));
+        blocks.push(block('reportWebcamStreaming'));
         blocks.push('-');
         blocks.push(block('doAsk'));
         blocks.push(watcherToggle('getLastAnswer'));
@@ -2031,6 +2031,7 @@ SpriteMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+        blocks.push('-');
 
     // Rigid Body -- experimental code
 
@@ -4472,9 +4473,6 @@ StageMorph.prototype.init = function (globals) {
     this.paletteCache = {}; // not to be serialized (!)
     this.lastAnswer = ''; // last user input, do not persist
     this.activeSounds = []; // do not persist
-    this.streamingCamera = false;
-    this.lastCameraCanvas = null;
-    this.lastCameraMotion = new Point(0, 0);
 
     this.trailsCanvas = null;
     this.isThreadSafe = false;
@@ -4490,6 +4488,10 @@ StageMorph.prototype.init = function (globals) {
                             'duplicate': 0,
                             'confetti': 0
                         };
+
+    this.webcamStreaming  = false;
+    this.lastCameraCanvas = null;
+    this.lastCameraMotion = new Point( 0, 0 );
 
     StageMorph.uber.init.call(this);
 
@@ -5225,7 +5227,7 @@ StageMorph.prototype.blockTemplates = function (category) {
 
     } else if (cat === 'sensing') {
 
-        blocks.push(block('reportStreamingCamera'));
+        blocks.push(block('reportWebcamStreaming'));
         blocks.push('-');
         blocks.push(block('doAsk'));
         blocks.push(watcherToggle('getLastAnswer'));
@@ -5251,6 +5253,7 @@ StageMorph.prototype.blockTemplates = function (category) {
         blocks.push(block('doSetFastTracking'));
         blocks.push('-');
         blocks.push(block('reportDate'));
+        blocks.push('-');
 
     // Rigid Body -- experimental code
 

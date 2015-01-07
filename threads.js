@@ -2518,17 +2518,21 @@ Process.prototype.reportColorIsTouchingColor = function (color1, color2) {
     return false;
 };
 
-Process.prototype.reportStreamingCamera = function () {
+Process.prototype.reportWebcamStreaming = function () {
     var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    return stage.streamingCamera;
+    return stage.webcamStreaming;
 };
 
 Process.prototype.reportCameraMotion = function () {
-    if (this.reportStreamingCamera()) {
+    if( this.reportWebcamStreaming() ) {
         var thisObj = this.blockReceiver();
         var motionCanvas = this.getCameraMotionCanvas();
-        var motion = this.getCameraMotion(motionCanvas, thisObj);
-        if (motion > 10) {
+
+
+        var motion = this.getCameraMotion( motionCanvas, thisObj );
+
+
+        if( motion > 30 ) {
             return true;
         }
     }
@@ -2536,7 +2540,7 @@ Process.prototype.reportCameraMotion = function () {
 };
 
 Process.prototype.reportCameraDirection = function () {
-    if (this.reportStreamingCamera()) {
+    if (this.reportWebcamStreaming()) {
         var thisObj = this.blockReceiver();
         var motionCanvas = this.getCameraMotionCanvas();
         var motion = this.getCameraMotion(motionCanvas, thisObj);
@@ -2858,149 +2862,304 @@ Process.prototype.doPlayNoteForSecs = function (pitch, secs) {
 // Process camera streaming primitives
 
 Process.prototype.doStreamCamera = function () {
-    if ((Date.now() - this.context.startTime) < 3000) {
-        // 20 FPS is enough
-        this.pushContext('doYield');
+    // Limits the webcam refresh rate to about 20 fps
+    if( (Date.now() - this.context.startTime) < 3000 ) {
+        this.pushContext( 'doYield' );
         this.pushContext();
         return;
     }
-    var myself = this;
-    var video = this.context.activeStream || null;
 
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (!stage.trailsCanvas) {
-        stage.trailsCanvas = newCanvas(stage.dimensions);
+    var me     = this;
+    var video  = this.context.webcamStream || null;
+    var stage  = this.homeContext.receiver.parentThatIsA( StageMorph ) || null;
+
+    if( ! stage.trailsCanvas ) {
+        stage.trailsCanvas = newCanvas( stage.dimensions );
     }
 
-    error = function (msg) {
-       var err = { name: 'Camera', message: msg };
-       myself.handleError(err);
-    };
+    if( ! stage.lastCameraCanvas ) {
+        stage.lastCameraCanvas = newCanvas( stage.dimensions );
+    }
 
-    stage.streamingCamera = false;
+    stage.webcamStreaming = false;
 
-    if (video === null) {
-        video = document.createElement('video');
-        video.width = stage.dimensions.x;
+    if( ! video ) {
+        // Video object that will allow us to connect to the webcam
+        video        = document.createElement( 'video' );
+        video.width  = stage.dimensions.x;
         video.height = stage.dimensions.y;
 
-        this.context.activeStream = video;
+        video.onloadedmetadata = function() {
+            video.play();
+        };
 
-        var videoObject = {'video': true, 'audio': false};
+        // Cross browser support
+        navigator.getUserMedia = (
+            navigator.getUserMedia ||
+            navigator.webkitGetUserMedia ||
+            navigator.mozGetUserMedia ||
+            navigator.msGetUserMedia
+        );
 
-        navigator.getUserMedia_ = (navigator.getUserMedia ||
-                navigator.webkitGetUserMedia ||
-                navigator.mozGetUserMedia ||
-                navigator.msGetUserMedia);
+        if( !! navigator.getUserMedia ) {
+            navigator.getUserMedia(
+                {
+                    'video': true,
+                    'audio': false
+                },
 
-        if (!! navigator.getUserMedia_) {
-            navigator.getUserMedia_(videoObject, function (stream) {
-                window.URL_ = window.URL || window.webkitURL;
-                video.src = window.URL_.createObjectURL(stream);
-                video.play();
-            }, error);
-        } else {
-            error('getUserMedia not supported');
-        }
-        stage.lastCameraCanvas = newCanvas(stage.dimensions);
-    } else {
-        var canvas = stage.trailsCanvas;
-        var context = canvas.getContext('2d');
+                function ( localMediaStream ) {
+                    /*
+                        Firefox Nightly right now needs you to set the mozSrcObject property of the
+                        video element in order to play it; for other browsers, set the src attribute.
+                        Whilst Firefox can use the stream directly, Webkit and Opera need to create
+                        an object URL from it. This all will become standardized in the near future.
+                    */
+                    if( navigator.mozGetUserMedia ) {
+                        video.mozSrcObject = localMediaStream;
+                    } else {
+                        var vendorURL = window.URL || window.webkitURL;
+                        video.src = vendorURL.createObjectURL( localMediaStream );
+                    }
 
-        // Mirror webcam image
-        context.translate( context.width, 0 );
-        context.scale( -1, 1 );
+                    /*
+                     * Keep a reference to the localMediaStream object, otherwise it's impossible to
+                     * stop the webcam and free the hardware completely.
+                     */
+                    me.context.localMediaStream = localMediaStream;
+                },
 
-        if (video.readyState == 4) {
-            try {
-    // https://stackoverflow.com/questions/23840880/check-whether-canvas-is-black
-    // check whether lastCameraCanvas is white -> copy video canvas
-    // otherwise you would have a 'motion' when the first camera picture is loaded
-                var tmp = document.createElement('canvas'),
-                    ctx = tmp.getContext('2d'), result;
-                tmp.width = tmp.height = 1;
-                ctx.drawImage(stage.lastCameraCanvas, 0, 0, 1, 1);
-                result = ctx.getImageData(0, 0, 1, 1);
-                if (result.data[0] + result.data[1] + result.data[2]
-                        + result.data[3] === 0) {
-                    stage.lastCameraCanvas.getContext('2d').
-                        drawImage(video, 0, 0, video.width, video.height);
-                } else {
-                    var dest = stage.lastCameraCanvas.getContext('2d');
-                    dest.drawImage(stage.trailsCanvas, 0, 0);
+                function (err) {
+                     throw new Error( 'The following error occured: ' + err );
                 }
-                context.drawImage(video, 0, 0, video.width * -1, video.height);
+            );
+        } else {
+            throw new Error( 'getUserMedia not supported by this browser.' );
+        }
+
+        // Keep a reference to the video object
+        this.context.webcamStream = video;
+
+        // Mirror the webcam image to be more "natural" to the interacting user
+        stage.trailsCanvas.getContext( '2d' ).translate( stage.trailsCanvas.width, 0 );
+        stage.trailsCanvas.getContext( '2d' ).scale( -1, 1 );
+
+    } else {
+        var canvas  = stage.trailsCanvas;
+        var context = canvas.getContext( '2d' );
+
+        if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
+            try {
+                /*
+                    The first time we get here our last frame canvas background
+                    color will be pure white, we need to detect this situation
+                    and manually push a one frame update, otherwise we'll trigger
+                    a motion event.
+                */
+                var canvas_previous  = stage.lastCameraCanvas;
+                var context_previous = canvas_previous.getContext( '2d' );
+
+                var canvas_tmp  = document.createElement( 'canvas' );
+                var context_tmp = canvas_tmp.getContext( '2d' );
+
+                canvas_tmp.width  = 1;
+                canvas_tmp.height = 1;
+
+                context_tmp.drawImage( canvas_previous,
+                    0, 0, canvas_tmp.width, canvas_tmp.height
+                );
+
+                var imgdata_tmp = context_tmp.getImageData(
+                    0, 0, canvas_tmp.width, canvas_tmp.height
+                );
+
+                if( imgdata_tmp.data[0] + imgdata_tmp.data[1] + imgdata_tmp.data[2] === 0 ) {
+                    context_previous.drawImage( video,
+                        0, 0, video.videoWidth, video.videoHeight,
+                        0, 0, canvas_previous.width, canvas_previous.height
+                    );
+                } else {
+                    context_previous.drawImage( canvas,
+                        0, 0, canvas.width, canvas.height,
+                        0, 0, canvas_previous.width, canvas_previous.height
+                    );
+                }
+
+                // Update the stage's trailsCanvas with the latest frame from the webcam
+                context.drawImage( video,
+                    0, 0, video.videoWidth, video.videoHeight,
+                    0, 0, canvas.width, canvas.height
+                );
+
+
+                /* --------------------------------------------------------
+                    MOTION DETECTION TESTING SECTION
+                    #TEST #DEBUG #DELETEME
+                   -------------------------------------------------------- */
+                if( true ) {
+                    var test = this.getCameraMotionCanvas();
+                    context.drawImage( test,
+                        0, 0, test.width, test.height,
+                        360, 270, 120, 90
+                    );
+                };
+                // END OF SECTION -----------------------------------------
+
                 stage.changed();
-                stage.streamingCamera = true;
+                stage.webcamStreaming = true;
+
             } catch (e) {
-                if (e.name !== 'NS_ERROR_NOT_AVAILABLE') {
-                    // https://bugzilla.mozilla.org/show_bug.cgi?id=879717
+                // https://bugzilla.mozilla.org/show_bug.cgi?id=879717
+                if( e.name !== 'NS_ERROR_NOT_AVAILABLE' ) {
                     throw e;
                 }
             }
         }
     }
-    this.pushContext('doYield');
+
+    this.pushContext( 'doYield' );
     this.pushContext();
 };
 
 Process.prototype.doStopCamera = function () {
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (stage) {
-        stage.streamingCamera = false;
-        stage.threads.processes.forEach(function (thread) {
-            if (thread.context) {
-                if (thread.context.activeStream) {
-                    thread.popContext();
+    var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
+    if( stage ) {
+        stage.threads.processes.forEach( function( thread ) {
+            if( thread.context.webcamStream ) {
+                if( navigator.mozGetUserMedia ) {
+                    // #TODO Fully test this code under Firefox
+                    thread.context.webcamStream.pause();
+                    thread.context.webcamStream.mozSrcObject.stop();
+                    thread.context.webcamStream.src = null;
+                } else {
+                    thread.context.webcamStream.pause();
+                    thread.context.localMediaStream.stop();
+                    thread.context.webcamStream.src = '';
                 }
+
+                stage.lastCameraCanvas = null;
+                stage.webcamStreaming  = false;
+                stage.trailsCanvas     = newCanvas( stage.dimensions );
+
+                stage.changed();
+                thread.popContext();
             }
         });
     }
 };
 
-Process.prototype.getCameraMotionCanvas = function () {
-    // see https://www.adobe.com/devnet/html5/articles/javascript-motion-detection.html
-    fastAbs = function (value) // faster, but less acurate
-    { return (value ^ (value >> 31)) - (value >> 31); };
+Process.prototype.applyFilterBW = function( canvas ) {
+    var context = canvas.getContext( '2d' );
+    var bw_data = context.getImageData(
+        0, 0, canvas.width, canvas.height
+    );
+    var pixels = bw_data.data;
 
-    threshold = function (value)
-    { return (value > 0x15) ? 0xFF : 0; };
+    for( var i = 0; i < pixels.length; i += 4 ) {
+        /*
+         * getImageData returns RGB + alpha data for each pixel of the image,
+         * to convert this color information into a greyscale image we'll
+         * manipulate the RGB channels individually and ignore the alpha one.
+         * But we must understand how color is perceived by the human eye,
+         * green has more importance than red or blue colors so our luminance
+         * algorithm will use different weight ratios for each color channel.
+         */
+        var bw = (
+            pixels[i +0] * 0.30 + // Red channel
+            pixels[i +1] * 0.59 + // Green channel
+            pixels[i +2] * 0.11   // Blue channel
+            // alpha channel is kept as is
+        );
 
-    diff = function (target, data1, data2) {
-        if (data1.length != data2.length) return null;
-        var i = 0;
-        while (i < (data1.length * 0.25)) {
-            var average1 = (data1[4*i] + data1[4*i+1] + data1[4*i+2]) / 3;
-            var average2 = (data2[4*i] + data2[4*i+1] + data2[4*i+2]) / 3;
-            var diff = threshold(fastAbs(average1 - average2));
-            target[4*i] = diff;
-            target[4*i+1] = diff;
-            target[4*i+2] = diff;
-            target[4*i+3] = 0xFF;
-            ++i;
-        }
-    };
-
-    var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
-    if (!stage.trailsCanvas || !stage.lastCameraCanvas) {
-        var canv = newCanvas(stage.dimensions);
-        var ctx = canv.getContext('2d');
-        ctx.fill();
-        return canv;
+        pixels[i +0] = pixels[i +1] = pixels[i +2] = bw;
     }
 
-    var canvasSource = stage.trailsCanvas;
-    var contextSource = canvasSource.getContext('2d');
-    var width = canvasSource.width,
-        height = canvasSource.height;
-    var sourceData = contextSource.getImageData(0, 0, width, height);
-    var lastImageData =
-        stage.lastCameraCanvas.getContext('2d').getImageData(0, 0, width, height);
-    var blendedData = contextSource.createImageData(width, height);
-    var blendedCanvas = newCanvas(stage.dimensions);
-    diff(blendedData.data, sourceData.data, lastImageData.data);
-    blendedCanvas.getContext('2d').putImageData(blendedData, 0, 0);
-    return blendedCanvas;
+    context.putImageData( bw_data, 0, 0 );
+};
+
+Process.prototype.duplicateAndApplyFilterBW = function( src_canvas ) {
+    // This function simplifies the creation of a new canvas and duplicating
+    // the src_canvas to the new one.
+
+    var new_canvas  = newCanvas( new Point(
+        src_canvas.width,
+        src_canvas.height
+    ));
+
+    var context = new_canvas.getContext( '2d' );
+    context.drawImage( src_canvas, 0, 0 );
+
+    // BW filter execution.
+    this.applyFilterBW( new_canvas );
+
+    return new_canvas;
+};
+
+Process.prototype.getCameraMotionCanvas = function () {
+    fastAbs = function( value ) // faster, but less acurate
+    { return (value ^ (value >> 31)) - (value >> 31); };
+
+    threshold = function( value )
+    { return (value > 0x15) ? 0xff : 0x00; };
+
+    var stage = this.homeContext.receiver.parentThatIsA( StageMorph );
+
+    if( !stage.trailsCanvas || !stage.lastCameraCanvas ) {
+        console.log( 'getCameraMotionCanvas: empty stage.trailsCanvas || stage.lastCameraCanvas' );
+        return null;
+    }
+
+    // Current frame
+    var canvas_current  = stage.trailsCanvas; //this.duplicateAndApplyFilterBW( stage.trailsCanvas );
+    var context_current = canvas_current.getContext( '2d' );
+    var imgdata_current = context_current.getImageData(
+        0, 0, canvas_current.width, canvas_current.height
+    );
+
+    // Previous frame
+    var canvas_previous  = stage.lastCameraCanvas; //this.duplicateAndApplyFilterBW( stage.lastCameraCanvas );
+    var context_previous = canvas_previous.getContext( '2d' );
+    var imgdata_prv = context_previous.getImageData(
+        0, 0, canvas_previous.width, canvas_previous.height
+    );
+
+    // New motion frame
+    var canvas_new  = newCanvas( new Point(canvas_current.width, canvas_current.height) );
+    var context_new = canvas_new.getContext( '2d' );
+    var imgdata_new = context_new.createImageData( canvas_new.width, canvas_new.height );
+
+    // Rotate the output canvas
+    context_new.translate( canvas_new.width, 0 );
+    context_new.scale( -1, 1 );
+
+    if( imgdata_current.length != imgdata_prv.length ) {
+        console.log( 'getCameraMotionCanvas: imgdata_current.length != imgdata_prv.length' );
+        return null;
+    }
+
+    for( var i = 0; i < imgdata_current.data.length; i += 4 ) {
+        var avg_act = (
+            imgdata_current.data[i +0] +
+            imgdata_current.data[i +1] +
+            imgdata_current.data[i +2]
+        ) /3;
+
+        var avg_prv = (
+            imgdata_prv.data[i +0] +
+            imgdata_prv.data[i +1] +
+            imgdata_prv.data[i +2]
+        ) /3;
+
+        var diff = threshold( fastAbs(avg_prv - avg_act) );
+
+        imgdata_new.data[i +0] = diff;
+        imgdata_new.data[i +1] = diff;
+        imgdata_new.data[i +2] = diff;
+        imgdata_new.data[i +3] = 0xff;
+    }
+
+    context_new.putImageData( imgdata_new, 0, 0 );
+    return canvas_new;
 };
 
 Process.prototype.getCameraMotion = function (motionCanvas, thisObj) {
@@ -3111,7 +3270,7 @@ Process.prototype.doVideoPlay = function() {
             newCanvas( stage.dimensions ),
             sprite.newCostumeName( 'video' ),
             new Point(
-                parseInt( stage.dimensions.x /2 ),
+                parseInt( stage.dimensions.x  /2 ),
                 parseInt( stage.dimensions.y /2 )
             )
         );
@@ -3135,18 +3294,18 @@ Process.prototype.doVideoPlay = function() {
 
         if( video.readyState >= 2 ) { // HAVE_CURRENT_DATA
             // Video width crop calculation
-            if( video.videoWidth > stage.image.width ) {
-                var sx = (video.videoWidth - stage.image.width) /2;
-                var swidth = stage.image.width;
+            if( video.videoWidth > stage.dimensions.x ) {
+                var sx = (video.videoWidth - stage.dimensions.x) /2;
+                var swidth = stage.dimensions.x;
             } else {
                 var sx = 0;
                 var swidth = video.videoWidth;
             }
 
             // Video height crop calculation
-            if( video.videoHeight > stage.image.height ) {
-                var sy = (video.videoHeight - stage.image.height) /2;
-                var sheight = stage.image.height;
+            if( video.videoHeight > stage.dimensions.y ) {
+                var sy = (video.videoHeight - stage.dimensions.y) /2;
+                var sheight = stage.dimensions.y;
             } else {
                 var sy = 0;
                 var sheight = video.videoHeight;
@@ -3225,7 +3384,7 @@ Process.prototype.doStopRigidBodySimulation = function() {
             stage.rigidBodySolver.stop();
             delete stage["rigidBodySolver"];
         }
-        
+
         stage.children.forEach(function(morph) {
             if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
                 morph.rigidBody.reset();
@@ -3299,13 +3458,16 @@ function Context(
     this.startTime = null;
     this.activeAudio = null;
     this.activeNote = null;
-    this.activeStream = null;
     this.isLambda = false; // marks the end of a lambda
     this.isImplicitLambda = false; // marks the end of a C-shaped slot
     this.isCustomBlock = false; // marks the end of a custom block's stack
     this.emptySlots = 0; // used for block reification
     this.tag = null;  // lexical catch-tag for custom blocks
-    this.videoStream = null;
+
+    this.webcamStream     = null;
+    this.localMediaStream = null;
+
+    this.videoStream  = null;
 }
 
 Context.prototype.toString = function () {
