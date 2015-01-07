@@ -296,7 +296,8 @@ RigidBodySolver.prototype.create = function () {
 
 RigidBodySolver.prototype.start= function () {
     this.isRunning = true;
-    this.time = Date.now();
+    this.lastTime = Date.now();
+    this.timeLeftOver = 0;
 }
 
 RigidBodySolver.prototype.stop = function () {
@@ -457,7 +458,7 @@ RigidBodySolver.prototype.step = function (bodies) {
     this.lastTime = now;
     this.timeLeftOver = elapsedTime - timesteps * this.stepSize;
 
-    //console.log(bodies);
+    //console.log(timesteps);
 
     for (var i = 0; i < timesteps; i++) {
 
