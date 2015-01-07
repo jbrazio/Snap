@@ -183,7 +183,8 @@ RigidBody.prototype.reset = function () {
 }
 
 RigidBody.prototype.updatePositions = function (dt) {
-    this.p = this.p.add(this.v.scaleBy(dt));//.add(this.a.scaleBy(0.5*dt*dt));
+    var dr = this.v.scaleBy(dt).add(this.a.scaleBy(0.5*dt*dt));
+    this.p = this.p.add(dr);
 }
 
 RigidBody.prototype.update = function (dt) {
@@ -193,7 +194,7 @@ RigidBody.prototype.update = function (dt) {
     // this.p = this.p.add(this.v.scaleBy(dt));
     var new_a = this.f.divideBy(this.m);
     var avg_a = this.a.add(new_a).scaleBy(0.5);
-    this.v.plus(avg_a.scaleBy(dt));
+    this.v = this.v.add(avg_a.scaleBy(dt));
     this.a = avg_a;
 }
 
