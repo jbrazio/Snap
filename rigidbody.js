@@ -171,7 +171,9 @@ RigidBody.prototype.setupDropHandler = function () {
 }
 
 RigidBody.prototype.justDropped = function () {
+    var springs = this.springs;
     this.reset();
+    this.springs = springs;
 }
 
 RigidBody.prototype.reset = function () {
@@ -188,10 +190,6 @@ RigidBody.prototype.updatePositions = function (dt) {
 }
 
 RigidBody.prototype.update = function (dt) {
-
-    // var a = this.f.divideBy(this.m);
-    // this.v.plus(a.scaleBy(dt));
-    // this.p = this.p.add(this.v.scaleBy(dt));
     var new_a = this.f.divideBy(this.m);
     var avg_a = this.a.add(new_a).scaleBy(0.5);
     this.v = this.v.add(avg_a.scaleBy(dt));
@@ -459,7 +457,9 @@ RigidBodySolver.prototype.step = function (bodies) {
     this.lastTime = now;
     this.timeLeftOver = elapsedTime - timesteps * this.stepSize;
 
-    //console.log(timesteps);
+    timesteps = Math.max(Math.min(timesteps,10),1);
+
+    //console.log(now, elapsedTime, timesteps, this.lastTime, this.timeLeftOver);
 
     for (var i = 0; i < timesteps; i++) {
 

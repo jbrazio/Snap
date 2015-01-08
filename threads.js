@@ -3355,8 +3355,8 @@ Process.prototype.doRigidBodySimulation = function() {
 
             if (!stage.rigidBodySolver) {
                 stage.rigidBodySolver = new RigidBodySolver(stage);
-                this.doBroadcastAndWait("RBSimStarted");
-                this.popContext();
+                this.doBroadcast("RBSimStarted");
+//                this.popContext();
             }
 
             if (!stage.rigidBodySolver.isRunning) {
