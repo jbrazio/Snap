@@ -3346,11 +3346,9 @@ Process.prototype.doVideoStop = function() {
 // Rigid Body solver primitives -- experimental code
 
 Process.prototype.doRigidBodySimulation = function() {
-    var stage;
     if (this.homeContext.receiver) {
-        stage = this.homeContext.receiver.parentThatIsA(StageMorph);
+        var stage = this.homeContext.receiver.parentThatIsA(StageMorph);
         if (stage) {
-
             this.context.rigidBody = true;
 
             if (!stage.rigidBodySolver) {
@@ -3365,9 +3363,13 @@ Process.prototype.doRigidBodySimulation = function() {
             }
 
             this.pushContext("doYield");
-            var arr = [];
-            stage.children.forEach(function(morph) {
-                if (morph.rigidBody && morph.rigidBody instanceof RigidBody) {
+            var world = stage.parentThatIsA(WorldMorph),
+                hand = world.hand,
+                arr = [],
+                bodies = stage.children.concat(hand.children);
+            bodies.forEach(function(morph) {
+                if (morph instanceof SpriteMorph && morph.rigidBody &&
+                    morph.rigidBody instanceof RigidBody) {
                     arr.push(morph.rigidBody);
                 }
             });
